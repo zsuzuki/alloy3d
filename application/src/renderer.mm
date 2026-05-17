@@ -2,14 +2,14 @@
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
 #import "renderer.h"
-#include "app_launch.h"
-#import "camera.h"
-#import "draw2d.h"
-#import "draw3d.h"
-#import "model.h"
-#import "sprite.h"
-#include "model4cpp.h"
-#include "sprite4cpp.h"
+#include <alloy3d/application.h>
+#import <alloy3d/camera.h>
+#import <alloy3d/metal/draw2d.h>
+#import <alloy3d/metal/draw3d.h>
+#import <alloy3d/metal/model.h>
+#import <alloy3d/metal/sprite.h>
+#include <alloy3d/model.h>
+#include <alloy3d/sprite.h>
 #include <AppKit/AppKit.h>
 #import <Metal/Metal.h>
 #include <cstddef>
@@ -39,15 +39,15 @@ NSString *StringViewToNSString(std::string_view value)
   return [string autorelease];
 }
 
-DrawText3DAlign ToDrawText3DAlign(TextAlign3D align)
+DrawText3DAlign ToDrawText3DAlign(alloy3d::TextAlign3D align)
 {
   switch (align)
   {
-  case TextAlign3D::CenterBottom:
+  case alloy3d::TextAlign3D::CenterBottom:
     return DrawText3DAlignCenterBottom;
-  case TextAlign3D::RightBottom:
+  case alloy3d::TextAlign3D::RightBottom:
     return DrawText3DAlignRightBottom;
-  case TextAlign3D::LeftBottom:
+  case alloy3d::TextAlign3D::LeftBottom:
   default:
     return DrawText3DAlignLeftBottom;
   }
@@ -55,12 +55,12 @@ DrawText3DAlign ToDrawText3DAlign(TextAlign3D align)
 } // namespace
 
 //
-class SpriteImpl : public SpriteCpp
+class SpriteImpl : public alloy3d::Sprite
 {
-  NSArray<Sprite *> *sprPtr_;
+  NSArray<MetalSprite *> *sprPtr_;
 
 public:
-  SpriteImpl(NSArray<Sprite *> *sprl) : sprPtr_(sprl) {}
+  SpriteImpl(NSArray<MetalSprite *> *sprl) : sprPtr_(sprl) {}
   ~SpriteImpl() override
   {
     [sprPtr_[0] release];
@@ -78,16 +78,16 @@ public:
     sprPtr_[0].color = simd_make_float4(red, green, blue, alpha);
   }
 
-  Sprite *GetSprite() { return sprPtr_[0]; }
+  MetalSprite *GetSprite() { return sprPtr_[0]; }
 };
 
 //
-class ModelImpl : public ModelCpp
+class ModelImpl : public alloy3d::Model
 {
-  Model *model_;
+  MetalModel *model_;
 
 public:
-  ModelImpl(Model *model) : model_(model) {}
+  ModelImpl(MetalModel *model) : model_(model) {}
   ~ModelImpl() override { [model_ release]; }
 
   bool IsLoaded() const override { return model_ != nil && model_.loaded; }
@@ -154,16 +154,16 @@ public:
     return model_ != nil && [model_ rigTransformAtIndex:index transform:&transform];
   }
 
-  Model *GetModel() { return model_; }
+  MetalModel *GetModel() { return model_; }
 };
 
 //
-class AppCtx : public ApplicationContext
+class AppCtx : public alloy3d::ApplicationContext
 {
 public:
   Draw2D     *draw2d_;
   Draw3D     *draw3d_;
-  CameraData *camera_;
+  alloy3d::CameraData *camera_;
   id<MTLDevice> device_;
 
   AppCtx()           = default;
@@ -225,7 +225,7 @@ public:
     [draw2d_ fillRoundRect:from to:to radius:radius color:color];
   }
 
-  CameraData &GetCamera() override { return *camera_; }
+  alloy3d::CameraData &GetCamera() override { return *camera_; }
 
   void SetLight3D(simd_float3 direction, float ambient, float diffuse) override
   {
@@ -293,7 +293,7 @@ public:
              segments:segments];
   }
   void DrawText3D(std::string_view msg, simd_float3 position, float lineHeight, simd_float4 color,
-                  TextAlign3D align) override
+                  alloy3d::TextAlign3D align) override
   {
     [draw3d_ drawText:StringViewToNSString(msg)
              position:position
@@ -302,7 +302,7 @@ public:
                 color:color];
   }
   void DrawText3D(std::string_view msg, simd_float3 position, float lineHeight,
-                  simd_float3 rotation, simd_float4 color, TextAlign3D align) override
+                  simd_float3 rotation, simd_float4 color, alloy3d::TextAlign3D align) override
   {
     [draw3d_ drawText:StringViewToNSString(msg)
              position:position
@@ -315,7 +315,7 @@ public:
   ModelPtr LoadModel(std::string fname) override
   {
     auto fnstr = [NSString stringWithUTF8String:fname.c_str()];
-    auto model = [[Model alloc] initWithFile:fnstr device:device_];
+    auto model = [[MetalModel alloc] initWithFile:fnstr device:device_];
     return std::make_shared<ModelImpl>(model);
   }
 
@@ -371,9 +371,9 @@ public:
   id<MTLLibrary>           shaderLibrary_;
   id<MTLDepthStencilState> depthState_;
 
-  ApplicationLoop *appLoop_;
+  alloy3d::ApplicationLoop *appLoop_;
 
-  CameraData camera_;
+  alloy3d::CameraData camera_;
   Draw2D    *draw2d_;
   Draw3D    *draw3d_;
   bool       applicationStarted_;
@@ -489,7 +489,7 @@ public:
   appLoop_->ResizeWindow(size.width, size.height);
 }
 
-- (void)setApplicationLoop:(nonnull ApplicationLoop *)appLoop
+- (void)setApplicationLoop:(nonnull alloy3d::ApplicationLoop *)appLoop
 {
   appLoop_ = appLoop;
 }

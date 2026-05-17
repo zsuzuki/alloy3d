@@ -1,12 +1,12 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import "draw3d.h"
-#import "camera.h"
+#import <alloy3d/metal/draw3d.h>
+#import <alloy3d/camera.h>
 #include "dsemaphore.h"
-#import "font_render.h"
+#import <alloy3d/metal/font_render.h>
 #include "shader_def.h"
-#import "texture.h"
+#import <alloy3d/metal/texture.h>
 #import <Metal/Metal.h>
 #include <arm_neon.h>
 #include <algorithm>
@@ -32,7 +32,7 @@ using DrawText3DPtr = std::shared_ptr<DrawText3D>;
 
 struct DrawModel3D
 {
-  Model       *model;
+  MetalModel       *model;
   simd_float3 position;
   simd_float3 rotation;
   simd_float3 scale;
@@ -678,7 +678,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 }
 
 //
-- (void)drawModel:(nonnull Model *)model
+- (void)drawModel:(nonnull MetalModel *)model
          position:(simd_float3)position
          rotation:(simd_float3)rotation
             scale:(simd_float3)scale
@@ -703,7 +703,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
 //
 - (void)render:(nullable id<MTLRenderCommandEncoder>)renderEncoder
-        camera:(nonnull CameraData *)camera;
+        camera:(nonnull alloy3d::CameraData *)camera;
 {
   [renderEncoder pushDebugGroup:@"Draw3D"];
 

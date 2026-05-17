@@ -5,6 +5,9 @@
 
 #include <simd/simd.h>
 
+namespace alloy3d
+{
+
 class CameraData final
 {
   matrix_float4x4 projection_;
@@ -32,3 +35,5 @@ public:
   [[nodiscard]] float           getAspect() const { return aspect_; }
   [[nodiscard]] float           getFieldOfView() const { return fovy_; }
 };
+
+} // namespace alloy3d

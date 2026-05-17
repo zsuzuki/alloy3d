@@ -1,0 +1,9 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+if(NOT APPLE)
+  message(FATAL_ERROR "Alloy3D requires macOS and Metal.")
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/Alloy3DTargets.cmake")

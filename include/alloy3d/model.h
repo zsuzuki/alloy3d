@@ -9,11 +9,14 @@
 #include <string>
 #include <string_view>
 
-class ModelCpp
+namespace alloy3d
+{
+
+class Model
 {
 public:
-  ModelCpp()          = default;
-  virtual ~ModelCpp() = default;
+  Model()          = default;
+  virtual ~Model() = default;
 
   virtual bool IsLoaded() const = 0;
   virtual std::size_t AnimationCount() const = 0;
@@ -40,3 +43,5 @@ public:
     return true;
   }
 };
+
+} // namespace alloy3d

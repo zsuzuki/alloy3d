@@ -22,7 +22,7 @@
 
 @end
 
-@interface Model : NSObject
+@interface MetalModel : NSObject
 
 @property(readonly) BOOL loaded;
 @property(readonly) NSArray<ModelPart *> *_Nonnull parts;

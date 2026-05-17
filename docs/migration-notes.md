@@ -26,7 +26,7 @@ prototype. Do not merge or filter the old repository history into this tree.
 
 ## Refactor Targets
 
-- Rename public headers into `include/alloy3d`.
+- Keep refining the public API now that headers live under `include/alloy3d`.
 - Replace the temporary `application` / `functions` target names with stable
   Alloy3D library targets.
 - Split sample apps from reusable library code.

@@ -8,7 +8,7 @@
 
 using SprPosList = std::vector<simd_float2>;
 
-@interface Sprite : NSObject
+@interface MetalSprite : NSObject
 
 typedef NS_ENUM(NSUInteger, SpriteAlign) {
   SpriteAlignLeftTop,

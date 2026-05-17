@@ -3,7 +3,10 @@
 //
 #pragma once
 
-class SpriteCpp
+namespace alloy3d
+{
+
+class Sprite
 {
 public:
   enum class Align
@@ -19,8 +22,8 @@ public:
     CenterBottom,
   };
 
-  SpriteCpp()          = default;
-  virtual ~SpriteCpp() = default;
+  Sprite()          = default;
+  virtual ~Sprite() = default;
 
   virtual bool IsLoaded() const = 0;
 
@@ -30,3 +33,5 @@ public:
   virtual void SetPosition(float x, float y)                                 = 0;
   virtual void SetFaceColor(float red, float green, float blue, float alpha) = 0;
 };
+
+} // namespace alloy3d

@@ -1,7 +1,7 @@
 //
 // Copyright 2023 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import "font_render.h"
+#import <alloy3d/metal/font_render.h>
 #import <AppKit/AppKit.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <CoreText/CTLine.h>

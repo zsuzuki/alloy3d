@@ -3,10 +3,11 @@
 //
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <simd/simd.h>
 
-namespace GamePad
+namespace alloy3d::gamepad
 {
 
 //
@@ -112,4 +113,4 @@ bool InitGamePad(GamePadUpdateHandler &&handler, GamePadConnectHandler &&connect
 // 毎フレーム更新チェックする場合はこちら(InitGamePadを呼ぶ必要はない)
 bool GetPadState(int idx, PadState &state);
 
-} // namespace GamePad
+} // namespace alloy3d::gamepad

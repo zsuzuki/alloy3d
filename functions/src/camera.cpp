@@ -1,14 +1,14 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#include "camera.h"
+#include <alloy3d/camera.h>
 #include <arm_neon.h>
 #include <complex>
 #include <simd/matrix.h>
 #include <simd/vector_make.h>
 
 //
-CameraData::CameraData()
+alloy3d::CameraData::CameraData()
 {
   projection_ = matrix_identity_float4x4;
   modelview_  = matrix_identity_float4x4;
@@ -20,10 +20,10 @@ CameraData::CameraData()
 }
 
 //
-CameraData::~CameraData() = default;
+alloy3d::CameraData::~CameraData() = default;
 
 //
-void CameraData::buildPerspective(float fovy, float aspect, float znear, float zfar)
+void alloy3d::CameraData::buildPerspective(float fovy, float aspect, float znear, float zfar)
 {
   fovy_       = fovy;
   aspect_     = aspect;
@@ -40,7 +40,7 @@ void CameraData::buildPerspective(float fovy, float aspect, float znear, float z
 }
 
 //
-void CameraData::buildModelView(simd_float3 eye, simd_float3 look, simd_float3 up)
+void alloy3d::CameraData::buildModelView(simd_float3 eye, simd_float3 look, simd_float3 up)
 {
   eyePoint_ = eye;
   lookAt_   = look;

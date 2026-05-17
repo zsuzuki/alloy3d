@@ -3,13 +3,16 @@
 //
 #pragma once
 
-#include "model4cpp.h"
-#include "sprite4cpp.h"
+#include <alloy3d/model.h>
+#include <alloy3d/sprite.h>
 #include <memory>
 #include <simd/vector_types.h>
 #include <string>
 #include <string_view>
 #include <vector>
+
+namespace alloy3d
+{
 
 class CameraData;
 
@@ -49,7 +52,7 @@ public:
   virtual void DrawPolygon(simd_float2 pos, float rad, float rot, int sides, simd_float4 color) = 0;
   virtual void FillPolygon(simd_float2 pos, float rad, float rot, int sides, simd_float4 color) = 0;
 
-  using SpritePtr                                   = std::shared_ptr<SpriteCpp>;
+  using SpritePtr                                   = std::shared_ptr<Sprite>;
   virtual SpritePtr CreateSprite(std::string fname) = 0;
   virtual void      DrawSprite(SpritePtr spr)       = 0;
 
@@ -86,7 +89,7 @@ public:
   virtual void DrawText3D(std::string_view msg, simd_float3 position, float lineHeight,
                           simd_float3 rotation, simd_float4 color,
                           TextAlign3D align = TextAlign3D::LeftBottom)            = 0;
-  using ModelPtr                                  = std::shared_ptr<ModelCpp>;
+  using ModelPtr                                  = std::shared_ptr<Model>;
   virtual ModelPtr LoadModel(std::string fname)   = 0;
   virtual void     DrawModel3D(ModelPtr model,
                                simd_float3 position,
@@ -125,4 +128,4 @@ public:
 //
 void LaunchApplication(std::shared_ptr<ApplicationLoop> apploop);
 
-//
+} // namespace alloy3d

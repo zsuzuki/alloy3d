@@ -4,10 +4,10 @@
 #import <Cocoa/Cocoa.h>
 #include <memory>
 
-#include "app_launch.h"
+#include <alloy3d/application.h>
 
 @interface AppDelegate : NSObject <NSApplicationDelegate>
 
-- (nonnull instancetype)initWithAppLoop:(nonnull ApplicationLoop *)appLoop;
+- (nonnull instancetype)initWithAppLoop:(nonnull alloy3d::ApplicationLoop *)appLoop;
 
 @end

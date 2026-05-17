@@ -1,13 +1,13 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import "keyboard.h"
+#import <alloy3d/keyboard.h>
 #include <Foundation/NSObjCRuntime.h>
 #include <GameController/GCKeyCodes.h>
 #import <GameController/GameController.h>
 #include <map>
 
-namespace Keyboard
+namespace alloy3d::keyboard
 {
 
 //
@@ -95,4 +95,4 @@ void Fetch(KeyPressCallback kpcb)
   };
 }
 
-} // namespace Keyboard
+} // namespace alloy3d::keyboard

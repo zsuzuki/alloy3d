@@ -1,7 +1,7 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import "model.h"
+#import <alloy3d/metal/model.h>
 #include "shader_def.h"
 
 #define CGLTF_IMPLEMENTATION
@@ -624,13 +624,13 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 @end
 
-@interface Model ()
+@interface MetalModel ()
 
 - (void)updatePoseAtTime:(float)seconds;
 
 @end
 
-@implementation Model
+@implementation MetalModel
 {
   BOOL                           loaded_;
   NSArray<ModelPart *>          *parts_;

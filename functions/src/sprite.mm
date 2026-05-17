@@ -1,14 +1,14 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import "sprite.h"
+#import <alloy3d/metal/sprite.h>
 #include <CoreGraphics/CoreGraphics.h>
 #import <CoreImage/CoreImage.h>
 #import <MetalKit/MetalKit.h>
 #include <cmath>
 #include <simd/simd.h>
 
-@implementation Sprite
+@implementation MetalSprite
 {
   CIImage        *image_;
   CIContext      *context_;

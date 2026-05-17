@@ -3,7 +3,7 @@
 //
 #import <MetalKit/MetalKit.h>
 
-#include "app_launch.h"
+#include <alloy3d/application.h>
 
 @interface Renderer : NSObject <MTKViewDelegate>
 
@@ -11,7 +11,7 @@
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size;
 - (void)drawInMTKView:(nonnull MTKView *)view;
 
-- (void)setApplicationLoop:(nonnull ApplicationLoop *)appLoop;
+- (void)setApplicationLoop:(nonnull alloy3d::ApplicationLoop *)appLoop;
 - (void)startApplicationLoop;
 
 @end

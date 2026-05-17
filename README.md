@@ -6,6 +6,15 @@ It focuses on real-time 3D rendering, model loading, materials, cameras, and
 animation playback. It is not intended to become a full game engine like Unity
 or Unreal Engine.
 
+Alloy3D was split out from the earlier `metaltest` rendering test repository.
+`samples/viewer/main.cpp` is a sample viewer, not the library entry point.
+
+日本語ドキュメント:
+
+- [ビルドと利用方法](docs/build-ja.md)
+- [API概要](docs/api-ja.md)
+- [移行メモ](docs/migration-notes.md)
+
 ## Status
 
 Alloy3D is being split from an earlier private prototype repository. The first
@@ -26,6 +35,20 @@ and only repository-owned sample assets.
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 ```
+
+The sample viewer is built by default. To build only the reusable library
+targets:
+
+```sh
+cmake -S . -B build -DALLOY3D_BUILD_VIEWER=OFF
+cmake --build build
+```
+
+Primary CMake targets:
+
+- `Alloy3D::application`: C++ application-loop API and macOS Metal host bridge
+- `Alloy3D::functions`: implementation library used by `Alloy3D::application`
+- `alloy3d_viewer`: bundled sample app, built when `ALLOY3D_BUILD_VIEWER=ON`
 
 ## Sample Assets
 

@@ -1,13 +1,13 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import "game_pad.h"
+#import <alloy3d/game_pad.h>
 #include <Foundation/NSObjCRuntime.h>
 #import <GameController/GameController.h>
 
 #include <list>
 
-namespace GamePad
+namespace alloy3d::gamepad
 {
 constexpr int RepeatCountInit = 30;
 constexpr int RepeatCountCont = 5;
@@ -286,4 +286,4 @@ bool GetPadState(int idx, PadState &state)
   return false;
 }
 
-} // namespace GamePad
+} // namespace alloy3d::gamepad

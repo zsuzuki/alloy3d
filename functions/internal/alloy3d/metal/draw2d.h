@@ -1,7 +1,7 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import "sprite.h"
+#import <alloy3d/metal/sprite.h>
 #import <MetalKit/MetalKit.h>
 #include <simd/vector_types.h>
 
@@ -39,8 +39,8 @@
              rotate:(float)rot
            numSides:(int)sides
               color:(simd_float4)color;
-- (nonnull NSArray<Sprite *> *)createSprites:(nonnull NSArray<NSString *> *)fileList;
-- (nonnull NSArray<Sprite *> *)createSpritesByImage:(nonnull NSArray<NSString *> *)fileList;
-- (void)drawSprite:(nonnull Sprite *)sprite;
+- (nonnull NSArray<MetalSprite *> *)createSprites:(nonnull NSArray<NSString *> *)fileList;
+- (nonnull NSArray<MetalSprite *> *)createSpritesByImage:(nonnull NSArray<NSString *> *)fileList;
+- (void)drawSprite:(nonnull MetalSprite *)sprite;
 
 @end

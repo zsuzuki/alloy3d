@@ -1,7 +1,7 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import "texture.h"
+#import <alloy3d/metal/texture.h>
 #import <CoreImage/CoreImage.h>
 #import <MetalKit/MetalKit.h>
 

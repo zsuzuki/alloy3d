@@ -11,21 +11,21 @@
 #include <vector>
 
 // c++ interface
-#include "app_launch.h"
+#include <alloy3d/application.h>
 
 //
 // InputView
 //
 @interface MyInputView : NSView <NSDraggingDestination>
-- (instancetype)initWithFrame:(NSRect)frame applicationLoop:(ApplicationLoop *)appLoop;
+- (instancetype)initWithFrame:(NSRect)frame applicationLoop:(alloy3d::ApplicationLoop *)appLoop;
 @end
 
 @implementation MyInputView
 {
-  ApplicationLoop *appLoop_;
+  alloy3d::ApplicationLoop *appLoop_;
 }
 
-- (instancetype)initWithFrame:(NSRect)frame applicationLoop:(ApplicationLoop *)appLoop
+- (instancetype)initWithFrame:(NSRect)frame applicationLoop:(alloy3d::ApplicationLoop *)appLoop
 {
   self = [super initWithFrame:frame];
   if (self)
@@ -160,7 +160,7 @@
   Renderer       *renderer_;
   WindowDelegate *windowDelegate_;
 
-  ApplicationLoop *appLoop_;
+  alloy3d::ApplicationLoop *appLoop_;
 }
 
 NSMenu *createMenu();
@@ -169,7 +169,7 @@ NSMenu *createMenu();
 
 @implementation AppDelegate
 
-- (instancetype)initWithAppLoop:(nonnull ApplicationLoop *)appLoop
+- (instancetype)initWithAppLoop:(nonnull alloy3d::ApplicationLoop *)appLoop
 {
   self     = [super init];
   appLoop_ = appLoop;
@@ -276,7 +276,7 @@ NSMenu *createMenu();
 @end
 
 //
-void LaunchApplication(std::shared_ptr<ApplicationLoop> apploop)
+void alloy3d::LaunchApplication(std::shared_ptr<alloy3d::ApplicationLoop> apploop)
 {
   AppDelegate *del  = [[AppDelegate alloc] initWithAppLoop:apploop.get()];
   auto         sapp = [NSApplication sharedApplication];

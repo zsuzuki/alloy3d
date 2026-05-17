@@ -1,14 +1,14 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#include <app_launch.h>
+#include <alloy3d/application.h>
 #include <algorithm>
-#include <camera.h>
+#include <alloy3d/camera.h>
 #include <cmath>
 #include <format>
-#include <game_pad.h>
+#include <alloy3d/game_pad.h>
 #include <iostream>
-#include <keyboard.h>
+#include <alloy3d/keyboard.h>
 #include <memory>
 #include <mutex>
 #include <simd/quaternion.h>
@@ -54,10 +54,10 @@ float ClampLength(float &x, float &y)
 //
 //
 //
-class MainLoop : public ApplicationLoop
+class MainLoop : public alloy3d::ApplicationLoop
 {
-  GamePad::PadState padState_{};
-  GamePad::PadState padStateUpdate_{};
+  alloy3d::gamepad::PadState padState_{};
+  alloy3d::gamepad::PadState padStateUpdate_{};
   bool              onKeyW_ = false;
   bool              onKeyA_ = false;
   bool              onKeyS_ = false;
@@ -66,8 +66,8 @@ class MainLoop : public ApplicationLoop
   double windowWidth_  = WindowWidth;
   double windowHeight_ = WindowHeight;
 
-  ApplicationContext::ModelPtr cube_;
-  ApplicationContext::ModelPtr animatedModel_;
+  alloy3d::ApplicationContext::ModelPtr cube_;
+  alloy3d::ApplicationContext::ModelPtr animatedModel_;
 
   simd_float3 modelPosition_ = simd_make_float3(0.0f, 0.0f, 10.0f);
   float       modelYaw_      = 0.0f;
@@ -93,8 +93,8 @@ public:
     width  = windowWidth_;
     height = windowHeight_;
 
-    GamePad::InitGamePad(
-        [&](const GamePad::PadState &state, GamePad::UpdateType)
+    alloy3d::gamepad::InitGamePad(
+        [&](const alloy3d::gamepad::PadState &state, alloy3d::gamepad::UpdateType)
         {
           std::lock_guard guard{padLock_};
           padState_ = state;
@@ -147,7 +147,7 @@ public:
     }
   }
 
-  void Start(ApplicationContext &ctx) override
+  void Start(alloy3d::ApplicationContext &ctx) override
   {
     cube_          = ctx.LoadModel("models/sample_cube.glb");
     animatedModel_ = ctx.LoadModel("models/animated_bouncer.glb");
@@ -156,7 +156,7 @@ public:
     lastFrameTime_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
   }
 
-  void Update(ApplicationContext &ctx) override
+  void Update(alloy3d::ApplicationContext &ctx) override
   {
     const auto nowTime = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     const auto deltaTime =
@@ -185,21 +185,21 @@ public:
 private:
   void FetchKeyboard()
   {
-    Keyboard::Fetch(
-        [&](Keyboard::KeyCode code, bool press)
+    alloy3d::keyboard::Fetch(
+        [&](alloy3d::keyboard::KeyCode code, bool press)
         {
           switch (code)
           {
-          case Keyboard::KeyCode::W:
+          case alloy3d::keyboard::KeyCode::W:
             onKeyW_ = press;
             break;
-          case Keyboard::KeyCode::A:
+          case alloy3d::keyboard::KeyCode::A:
             onKeyA_ = press;
             break;
-          case Keyboard::KeyCode::S:
+          case alloy3d::keyboard::KeyCode::S:
             onKeyS_ = press;
             break;
-          case Keyboard::KeyCode::D:
+          case alloy3d::keyboard::KeyCode::D:
             onKeyD_ = press;
             break;
           default:
@@ -208,7 +208,7 @@ private:
         });
   }
 
-  void UpdateAnimationSelection(GamePad::PadState &pad)
+  void UpdateAnimationSelection(alloy3d::gamepad::PadState &pad)
   {
     if (!animatedModel_ || !animatedModel_->IsLoaded())
     {
@@ -243,7 +243,7 @@ private:
     }
   }
 
-  void UpdateAnimatedModel(const GamePad::PadState &pad, float deltaTime)
+  void UpdateAnimatedModel(const alloy3d::gamepad::PadState &pad, float deltaTime)
   {
     float moveX = -ApplyDeadZone(pad.leftX);
     float moveY = ApplyDeadZone(pad.leftY);
@@ -287,7 +287,7 @@ private:
     }
   }
 
-  void UpdateCamera(ApplicationContext &ctx, const GamePad::PadState &pad, float deltaTime)
+  void UpdateCamera(alloy3d::ApplicationContext &ctx, const alloy3d::gamepad::PadState &pad, float deltaTime)
   {
     cameraYaw_ += ApplyDeadZone(pad.rightX) * CameraTurn * deltaTime;
     cameraPitch_ += ApplyDeadZone(pad.rightY) * CameraTurn * deltaTime;
@@ -304,7 +304,7 @@ private:
     ctx.GetCamera().buildModelView(eye, look, up);
   }
 
-  void DrawGrid(ApplicationContext &ctx)
+  void DrawGrid(alloy3d::ApplicationContext &ctx)
   {
     const auto lineColor = simd_make_float4(0.35f, 0.38f, 0.42f, 1.0f);
     const auto axisX     = simd_make_float4(0.75f, 0.25f, 0.25f, 1.0f);
@@ -323,7 +323,7 @@ private:
     }
   }
 
-  void DrawModels(ApplicationContext &ctx)
+  void DrawModels(alloy3d::ApplicationContext &ctx)
   {
     if (cube_ && cube_->IsLoaded())
     {
@@ -344,7 +344,7 @@ private:
     }
   }
 
-  void DrawAnimationLabel(ApplicationContext &ctx)
+  void DrawAnimationLabel(alloy3d::ApplicationContext &ctx)
   {
     if (!animatedModel_ || !animatedModel_->IsLoaded())
     {
@@ -365,7 +365,7 @@ private:
                    labelPosition,
                    0.7f,
                    labelColor,
-                   TextAlign3D::CenterBottom);
+                   alloy3d::TextAlign3D::CenterBottom);
   }
 };
 
@@ -375,7 +375,7 @@ private:
 int main(int argc, char **argv)
 {
   auto mainloop = std::make_shared<MainLoop>();
-  LaunchApplication(mainloop);
+  alloy3d::LaunchApplication(mainloop);
 
   return 0;
 }

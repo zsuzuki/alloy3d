@@ -3,9 +3,10 @@
 //
 #pragma once
 
+#include <cstdint>
 #include <functional>
 
-namespace Keyboard
+namespace alloy3d::keyboard
 {
 
 //
@@ -80,4 +81,4 @@ using KeyPressCallback = std::function<void(KeyCode, bool)>;
 //
 void Fetch(KeyPressCallback kpcb);
 
-} // namespace Keyboard
+} // namespace alloy3d::keyboard

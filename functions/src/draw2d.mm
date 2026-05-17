@@ -1,12 +1,12 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import "draw2d.h"
+#import <alloy3d/metal/draw2d.h>
 #include "dsemaphore.h"
-#import "font_render.h"
+#import <alloy3d/metal/font_render.h>
 #include "shader_def.h"
-#import "sprite.h"
-#import "texture.h"
+#import <alloy3d/metal/sprite.h>
+#import <alloy3d/metal/texture.h>
 #import <Metal/Metal.h>
 #include <arm_neon.h>
 #include <algorithm>
@@ -129,7 +129,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   SimpleLock fillLock_;
 
   // sprite
-  NSMutableArray<Sprite *> *spriteList;
+  NSMutableArray<MetalSprite *> *spriteList;
 }
 
 @synthesize screenSize;
@@ -554,7 +554,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   auto               textVtx  = textVtx_[pageIndex_];
   __block NSUInteger vtxCount = 0;
   [spriteList
-      enumerateObjectsUsingBlock:^(Sprite *_Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
+      enumerateObjectsUsingBlock:^(MetalSprite *_Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
         auto  poslist = [obj update];
         auto *sprvtx  = (VertexDataPrim2D *)textVtx.contents + vtxCount;
         for (int i = 0; i < 4; i++)
@@ -582,7 +582,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 {
   __block NSUInteger vtxCount = 0;
   [spriteList
-      enumerateObjectsUsingBlock:^(Sprite *_Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
+      enumerateObjectsUsingBlock:^(MetalSprite *_Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
         [renderEncoder setFragmentTexture:obj.texObj atIndex:TextureIndexColor];
         [renderEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip
                           vertexStart:vtxCount
@@ -660,7 +660,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 }
 
 //
-- (nonnull NSArray<Sprite *> *)createSprites:(nonnull NSArray<NSString *> *)fileList
+- (nonnull NSArray<MetalSprite *> *)createSprites:(nonnull NSArray<NSString *> *)fileList
 {
   auto texloader = [[MTKTextureLoader alloc] initWithDevice:device_];
 
@@ -671,7 +671,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
         [urlList addObject:fURL];
       }];
 
-  NSMutableArray<Sprite *> *sprList = [[NSMutableArray alloc] init];
+  NSMutableArray<MetalSprite *> *sprList = [[NSMutableArray alloc] init];
   [texloader newTexturesWithContentsOfURLs:urlList
                                    options:nil
                          completionHandler:^(NSArray<id<MTLTexture>> *_Nonnull textures,
@@ -679,7 +679,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
                            [textures enumerateObjectsUsingBlock:^(id<MTLTexture> _Nonnull obj,
                                                                   NSUInteger idx,
                                                                   BOOL *_Nonnull stop) {
-                             auto spr = [[Sprite alloc] initWithTexture:obj];
+                             auto spr = [[MetalSprite alloc] initWithTexture:obj];
                              [sprList addObject:spr];
                            }];
                          }];
@@ -688,9 +688,9 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 }
 
 //
-- (nonnull NSArray<Sprite *> *)createSpritesByImage:(NSArray<NSString *> *)fileList
+- (nonnull NSArray<MetalSprite *> *)createSpritesByImage:(NSArray<NSString *> *)fileList
 {
-  NSMutableArray<Sprite *> *sprList = [[NSMutableArray alloc] init];
+  NSMutableArray<MetalSprite *> *sprList = [[NSMutableArray alloc] init];
   [fileList
       enumerateObjectsUsingBlock:^(NSString *_Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
         NSURL *fURL         = [[NSBundle mainBundle] URLForResource:obj withExtension:nil];
@@ -703,7 +703,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
         texdesc.storageMode = MTLStorageModeManaged;
         texdesc.usage       = MTLResourceUsageRead | MTLResourceUsageWrite;
         auto tex            = [device_ newTextureWithDescriptor:texdesc];
-        auto spr            = [[Sprite alloc] initWithImage:img texture:tex];
+        auto spr            = [[MetalSprite alloc] initWithImage:img texture:tex];
         [sprList addObject:spr];
         [spr release];
         [texdesc release];
@@ -712,7 +712,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 }
 
 //
-- (void)drawSprite:(Sprite *)sprite
+- (void)drawSprite:(MetalSprite *)sprite
 {
   [spriteList addObject:sprite];
 }

@@ -7,8 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(functions)
 
-include_directories(include)
-
 set(SOURCES
   src/camera.cpp
   src/sprite.mm
@@ -22,4 +20,16 @@ set(SOURCES
 )
 
 add_library(${PROJECT_NAME} ${SOURCES})
-target_include_directories(${PROJECT_NAME} PUBLIC include ../third_party/cgltf)
+target_include_directories(${PROJECT_NAME}
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/internal
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/cgltf
+    ${CMAKE_CURRENT_SOURCE_DIR}/../shaders
+)
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  EXPORT_NAME functions
+  OUTPUT_NAME alloy3d_functions
+)
