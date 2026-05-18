@@ -27,6 +27,11 @@ public:
   virtual void SetAnimation(std::size_t index) = 0;
   virtual bool SetAnimation(std::string_view name) = 0;
   virtual void SetAnimationTime(float seconds) = 0;
+  virtual void SetAnimationBlend(std::size_t animationA,
+                                 float timeASeconds,
+                                 std::size_t animationB,
+                                 float timeBSeconds,
+                                 float weight) = 0;
 
   virtual std::size_t RigCount() const = 0;
   virtual std::string RigName(std::size_t index) const = 0;

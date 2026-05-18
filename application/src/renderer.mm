@@ -135,6 +135,21 @@ public:
       [model_ setAnimationTime:seconds];
     }
   }
+  void SetAnimationBlend(std::size_t animationA,
+                         float timeASeconds,
+                         std::size_t animationB,
+                         float timeBSeconds,
+                         float weight) override
+  {
+    if (model_ != nil)
+    {
+      [model_ setAnimationBlendFrom:animationA
+                              timeA:timeASeconds
+                                 to:animationB
+                              timeB:timeBSeconds
+                             weight:weight];
+    }
+  }
   std::size_t RigCount() const override { return model_ != nil ? [model_ rigCount] : 0; }
   std::string RigName(std::size_t index) const override
   {

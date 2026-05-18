@@ -36,6 +36,11 @@
 - (void)setAnimationIndex:(NSUInteger)index;
 - (BOOL)setAnimationName:(nonnull NSString *)name;
 - (void)setAnimationTime:(float)seconds;
+- (void)setAnimationBlendFrom:(NSUInteger)animationA
+                        timeA:(float)timeASeconds
+                           to:(NSUInteger)animationB
+                        timeB:(float)timeBSeconds
+                       weight:(float)weight;
 - (NSUInteger)rigCount;
 - (nonnull NSString *)rigNameAtIndex:(NSUInteger)index;
 - (NSInteger)rigIndexForName:(nonnull NSString *)name;

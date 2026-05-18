@@ -22,14 +22,15 @@ namespace
 constexpr double WindowWidth  = 1600.0;
 constexpr double WindowHeight = 800.0;
 
-constexpr float GridHalfSize = 20.0f;
-constexpr float GridStep     = 1.0f;
-constexpr float ModelScale   = 1.5f;
-constexpr float MoveSpeed    = 4.0f;
-constexpr float CameraDist   = 7.0f;
-constexpr float CameraHeight = 5.0f;
-constexpr float CameraTurn   = 2.2f;
-constexpr float DeadZone     = 0.15f;
+constexpr float GridHalfSize          = 20.0f;
+constexpr float GridStep              = 1.0f;
+constexpr float ModelScale            = 1.5f;
+constexpr float MoveSpeed             = 4.0f;
+constexpr float CameraDist            = 7.0f;
+constexpr float CameraHeight          = 5.0f;
+constexpr float CameraTurn            = 2.2f;
+constexpr float DeadZone              = 0.15f;
+constexpr float CubeJumpBlendDuration = 0.35f;
 
 constexpr std::size_t AnimationNameOffset = 3;
 
@@ -67,6 +68,7 @@ class MainLoop : public alloy3d::ApplicationLoop
   double windowHeight_ = WindowHeight;
 
   alloy3d::ApplicationContext::ModelPtr cube_;
+  alloy3d::ApplicationContext::ModelPtr cubeJump_;
   alloy3d::ApplicationContext::ModelPtr animatedModel_;
 
   simd_float3 modelPosition_ = simd_make_float3(0.0f, 0.0f, 10.0f);
@@ -74,9 +76,15 @@ class MainLoop : public alloy3d::ApplicationLoop
   float       cameraYaw_      = 0.0f;
   float       cameraPitch_    = 0.18f;
   float       animationTime_  = 0.0f;
-  std::size_t animationIndex_ = 0;
+  float       cubeJumpTime_               = 0.0f;
+  float       cubeJumpBlendTime_          = 0.0f;
+  std::size_t animationIndex_             = 0;
+  std::size_t cubeJumpAnimationIndex_     = 0;
+  std::size_t cubeJumpNextAnimationIndex_ = 0;
 
-  bool initializedModelAnimation_ = false;
+  bool initializedModelAnimation_    = false;
+  bool initializedCubeJumpAnimation_ = false;
+  bool blendingCubeJumpAnimation_    = false;
 
   std::mutex padLock_;
   uint64_t   lastFrameTime_ = 0;
@@ -119,6 +127,7 @@ public:
   void WillCloseWindow() override
   {
     cube_.reset();
+    cubeJump_.reset();
     animatedModel_.reset();
     std::cout << std::format("To Close Window\n");
   }
@@ -150,6 +159,7 @@ public:
   void Start(alloy3d::ApplicationContext &ctx) override
   {
     cube_          = ctx.LoadModel("models/sample_cube.glb");
+    cubeJump_      = ctx.LoadModel("models/cube_jump.glb");
     animatedModel_ = ctx.LoadModel("models/animated_bouncer.glb");
 
     ctx.SetTextFontSize(28.0f);
@@ -172,12 +182,14 @@ public:
     }
 
     UpdateAnimationSelection(pad);
+    UpdateCubeJump(deltaTime);
     UpdateAnimatedModel(pad, deltaTime);
     UpdateCamera(ctx, pad, deltaTime);
 
     ctx.SetLight3D(simd_make_float3(-0.35f, -0.8f, -0.45f), 0.35f, 0.85f);
     DrawGrid(ctx);
     DrawModels(ctx);
+    DrawCubeJumpLabel(ctx);
     DrawAnimationLabel(ctx);
 
   }
@@ -287,6 +299,117 @@ private:
     }
   }
 
+  void UpdateCubeJump(float deltaTime)
+  {
+    if (!cubeJump_ || !cubeJump_->IsLoaded() || cubeJump_->AnimationCount() == 0)
+    {
+      return;
+    }
+
+    if (!initializedCubeJumpAnimation_)
+    {
+      cubeJumpAnimationIndex_     = 0;
+      cubeJumpNextAnimationIndex_ = 0;
+      cubeJumpTime_               = 0.0f;
+      cubeJumpBlendTime_          = 0.0f;
+      initializedCubeJumpAnimation_ = true;
+      cubeJump_->SetAnimation(cubeJumpAnimationIndex_);
+    }
+
+    const auto animationCount = cubeJump_->AnimationCount();
+    if (animationCount == 1)
+    {
+      const auto duration = cubeJump_->AnimationDuration(cubeJumpAnimationIndex_);
+      cubeJumpTime_ += deltaTime;
+      if (duration > 0.0f)
+      {
+        cubeJumpTime_ = std::fmod(cubeJumpTime_, duration);
+      }
+      cubeJump_->SetAnimationTime(cubeJumpTime_);
+      return;
+    }
+
+    if (blendingCubeJumpAnimation_)
+    {
+      cubeJumpBlendTime_ += deltaTime;
+      const auto blendWeight = std::clamp(cubeJumpBlendTime_ / CubeJumpBlendDuration, 0.0f, 1.0f);
+      if (blendWeight >= 1.0f)
+      {
+        blendingCubeJumpAnimation_ = false;
+        cubeJumpAnimationIndex_    = cubeJumpNextAnimationIndex_;
+        cubeJumpTime_              = cubeJumpBlendTime_;
+        cubeJump_->SetAnimation(cubeJumpAnimationIndex_);
+        cubeJump_->SetAnimationTime(cubeJumpTime_);
+        return;
+      }
+
+      cubeJump_->SetAnimationBlend(cubeJumpAnimationIndex_,
+                                   cubeJumpTime_,
+                                   cubeJumpNextAnimationIndex_,
+                                   cubeJumpBlendTime_,
+                                   blendWeight);
+      return;
+    }
+
+    const auto duration = cubeJump_->AnimationDuration(cubeJumpAnimationIndex_);
+    cubeJumpTime_ += deltaTime;
+    if (duration <= 0.0f)
+    {
+      cubeJumpTime_ = 0.0f;
+      cubeJumpAnimationIndex_ = (cubeJumpAnimationIndex_ + 1) % animationCount;
+      cubeJump_->SetAnimation(cubeJumpAnimationIndex_);
+      cubeJump_->SetAnimationTime(cubeJumpTime_);
+      return;
+    }
+
+    if (cubeJumpTime_ >= duration)
+    {
+      cubeJumpTime_               = std::max(0.0f, duration - 0.0001f);
+      cubeJumpNextAnimationIndex_ = (cubeJumpAnimationIndex_ + 1) % animationCount;
+      cubeJumpBlendTime_          = 0.0f;
+      blendingCubeJumpAnimation_  = true;
+      cubeJump_->SetAnimationBlend(cubeJumpAnimationIndex_,
+                                   cubeJumpTime_,
+                                   cubeJumpNextAnimationIndex_,
+                                   cubeJumpBlendTime_,
+                                   0.0f);
+      return;
+    }
+
+    cubeJump_->SetAnimationTime(cubeJumpTime_);
+  }
+
+  void DrawCubeJumpLabel(alloy3d::ApplicationContext &ctx)
+  {
+    if (!cubeJump_ || !cubeJump_->IsLoaded())
+    {
+      return;
+    }
+
+    const auto animationCount = cubeJump_->AnimationCount();
+    if (animationCount == 0)
+    {
+      return;
+    }
+
+    const auto labelPosition = simd_make_float3(2.0f, 2.4f, 0.0f);
+    const auto labelColor    = simd_make_float4(0.45f, 0.95f, 1.0f, 1.0f);
+    const auto label = blendingCubeJumpAnimation_
+                           ? std::format("{} -> {} {:.0f}%",
+                                         cubeJump_->AnimationName(cubeJumpAnimationIndex_),
+                                         cubeJump_->AnimationName(cubeJumpNextAnimationIndex_),
+                                         std::clamp(cubeJumpBlendTime_ / CubeJumpBlendDuration, 0.0f, 1.0f) * 100.0f)
+                           : std::format("{} ({}/{})",
+                                         cubeJump_->AnimationName(cubeJumpAnimationIndex_),
+                                         cubeJumpAnimationIndex_ + 1,
+                                         animationCount);
+    ctx.DrawText3D(label,
+                   labelPosition,
+                   0.45f,
+                   labelColor,
+                   alloy3d::TextAlign3D::CenterBottom);
+  }
+
   void UpdateCamera(alloy3d::ApplicationContext &ctx, const alloy3d::gamepad::PadState &pad, float deltaTime)
   {
     cameraYaw_ += ApplyDeadZone(pad.rightX) * CameraTurn * deltaTime;
@@ -329,6 +452,15 @@ private:
     {
       ctx.DrawModel3D(cube_,
                       simd_make_float3(0.0f, 0.0f, 0.0f),
+                      simd_make_float3(0.0f, 0.0f, 0.0f),
+                      simd_make_float3(1.0f, 1.0f, 1.0f),
+                      simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f));
+    }
+
+    if (cubeJump_ && cubeJump_->IsLoaded())
+    {
+      ctx.DrawModel3D(cubeJump_,
+                      simd_make_float3(2.0f, 0.0f, 0.0f),
                       simd_make_float3(0.0f, 0.0f, 0.0f),
                       simd_make_float3(1.0f, 1.0f, 1.0f),
                       simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f));

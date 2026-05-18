@@ -114,6 +114,7 @@ int main()
 - `SetAnimation(index)`
 - `SetAnimation(name)`
 - `SetAnimationTime(seconds)`
+- `SetAnimationBlend(animationA, timeASeconds, animationB, timeBSeconds, weight)`
 - `RigCount()`
 - `RigName(index)`
 - `RigIndex(name)`

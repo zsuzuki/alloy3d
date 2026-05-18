@@ -118,6 +118,7 @@ if(ALLOY3D_BUILD_VIEWER)
   set(SHADERS_LIB ${CMAKE_BINARY_DIR}/shaders/shaders.metallib)
   set(ALLOY3D_SAMPLE_RESOURCES
     assets/samples/models/animated_bouncer.glb
+    assets/samples/models/cube_jump.glb
     assets/samples/models/sample_cube.glb
     assets/samples/models/sample_mdl.glb
   )

@@ -626,6 +626,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 @interface MetalModel ()
 
+- (std::vector<NodeData>)samplePoseForAnimation:(NSUInteger)index time:(float)seconds;
+- (void)applyPose:(const std::vector<NodeData> &)pose;
 - (void)updatePoseAtTime:(float)seconds;
 
 @end
@@ -943,6 +945,63 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   [self updatePoseAtTime:seconds];
 }
 
+- (void)setAnimationBlendFrom:(NSUInteger)animationA
+                        timeA:(float)timeASeconds
+                           to:(NSUInteger)animationB
+                        timeB:(float)timeBSeconds
+                       weight:(float)weight
+{
+  if (nodes_.empty())
+  {
+    return;
+  }
+  if (animationA >= animations_.size() || animationB >= animations_.size())
+  {
+    return;
+  }
+
+  auto blendWeight = std::clamp(weight, 0.0f, 1.0f);
+  if (blendWeight <= 0.0f)
+  {
+    animationIndex_ = animationA;
+    currentTime_    = timeASeconds;
+    [self updatePoseAtTime:timeASeconds];
+    return;
+  }
+  if (blendWeight >= 1.0f)
+  {
+    animationIndex_ = animationB;
+    currentTime_    = timeBSeconds;
+    [self updatePoseAtTime:timeBSeconds];
+    return;
+  }
+  auto poseA = [self samplePoseForAnimation:animationA time:timeASeconds];
+  auto poseB = [self samplePoseForAnimation:animationB time:timeBSeconds];
+  auto pose  = poseA;
+  for (size_t i = 0; i < pose.size() && i < poseB.size(); i++)
+  {
+    const auto &a = poseA[i];
+    const auto &b = poseB[i];
+    auto       &p = pose[i];
+
+    if (a.hasMatrix && b.hasMatrix)
+    {
+      p.matrix    = blendWeight < 0.5f ? a.matrix : b.matrix;
+      p.hasMatrix = true;
+      continue;
+    }
+
+    p.translation = a.translation + (b.translation - a.translation) * blendWeight;
+    p.rotation    = LerpQuat(a.rotation, b.rotation, blendWeight);
+    p.scale       = a.scale + (b.scale - a.scale) * blendWeight;
+    p.hasMatrix   = false;
+  }
+
+  animationIndex_ = animationB;
+  currentTime_    = timeBSeconds;
+  [self applyPose:pose];
+}
+
 - (NSUInteger)rigCount
 {
   return nodes_.size();
@@ -1003,17 +1062,12 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   visited[index] = true;
 }
 
-- (void)updatePoseAtTime:(float)seconds
+- (std::vector<NodeData>)samplePoseForAnimation:(NSUInteger)index time:(float)seconds
 {
-  if (nodes_.empty())
-  {
-    return;
-  }
-
   std::vector<NodeData> pose = nodes_;
-  if (!animations_.empty() && animationIndex_ < animations_.size())
+  if (index < animations_.size())
   {
-    const auto &clip = animations_[animationIndex_];
+    const auto &clip = animations_[index];
     auto        time = clip.duration > 0.0f ? std::fmod(std::max(0.0f, seconds), clip.duration) : seconds;
     for (const auto &channel : clip.channels)
     {
@@ -1051,6 +1105,16 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     }
   }
 
+  return pose;
+}
+
+- (void)applyPose:(const std::vector<NodeData> &)pose
+{
+  if (pose.empty())
+  {
+    return;
+  }
+
   std::vector<simd_float4x4> localMatrices(pose.size(), matrix_identity_float4x4);
   for (size_t i = 0; i < pose.size(); i++)
   {
@@ -1070,6 +1134,16 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     [part updateWithNodeWorldMatrices:worldMatrices skins:skins_];
   }
   currentWorldMatrices_ = std::move(worldMatrices);
+}
+
+- (void)updatePoseAtTime:(float)seconds
+{
+  if (nodes_.empty())
+  {
+    return;
+  }
+
+  [self applyPose:[self samplePoseForAnimation:animationIndex_ time:seconds]];
 }
 
 @end
