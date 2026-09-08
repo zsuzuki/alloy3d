@@ -3,18 +3,20 @@
 //
 #pragma once
 
-#include <dispatch/dispatch.h>
+#include <os/lock.h>
 
 //
 class SimpleLock
 {
 
-  dispatch_semaphore_t sem_ = dispatch_semaphore_create(1);
+  os_unfair_lock lock_ = OS_UNFAIR_LOCK_INIT;
 
 public:
-  ~SimpleLock() { dispatch_release(sem_); }
-  void lock() { dispatch_semaphore_wait(sem_, DISPATCH_TIME_FOREVER); }
-  void unlock() { dispatch_semaphore_signal(sem_); };
+  SimpleLock() = default;
+  SimpleLock(const SimpleLock &) = delete;
+  SimpleLock &operator=(const SimpleLock &) = delete;
+  void lock() { os_unfair_lock_lock(&lock_); }
+  void unlock() { os_unfair_lock_unlock(&lock_); }
 };
 
 //
@@ -24,5 +26,7 @@ class SimpleGuard
 
 public:
   SimpleGuard(SimpleLock &lock) : lock_(lock) { lock_.lock(); }
+  SimpleGuard(const SimpleGuard &) = delete;
+  SimpleGuard &operator=(const SimpleGuard &) = delete;
   ~SimpleGuard() { lock_.unlock(); }
 };

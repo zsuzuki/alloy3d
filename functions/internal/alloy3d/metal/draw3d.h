@@ -87,4 +87,6 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
             color:(simd_float4)color;
 - (void)setLightDirection:(simd_float3)direction ambient:(float)ambient diffuse:(float)diffuse;
 
+- (void)discardFrame;
+
 @end

@@ -4,6 +4,7 @@
 #import <alloy3d/metal/draw3d.h>
 #import <alloy3d/camera.h>
 #include "dsemaphore.h"
+#include <alloy3d/metal/vertex_buffer.h>
 #import <alloy3d/metal/font_render.h>
 #include "shader_def.h"
 #import <alloy3d/metal/texture.h>
@@ -13,6 +14,8 @@
 #include <cmath>
 #include <list>
 #include <memory>
+#include <vector>
+#include <utility>
 #include <simd/simd.h>
 
 namespace
@@ -38,9 +41,15 @@ struct DrawModel3D
   simd_float3 scale;
   simd_float4 color;
 
+  DrawModel3D(MetalModel *m, simd_float3 p, simd_float3 r, simd_float3 s, simd_float4 c)
+      : model([m retain]), position(p), rotation(r), scale(s), color(c) {}
+  DrawModel3D(const DrawModel3D &) = delete;
+  DrawModel3D &operator=(const DrawModel3D &) = delete;
+  DrawModel3D(DrawModel3D &&other) noexcept
+      : model(std::exchange(other.model, nil)), position(other.position), rotation(other.rotation),
+        scale(other.scale), color(other.color) {}
   ~DrawModel3D() { [model release]; }
 };
-using DrawModel3DPtr = std::shared_ptr<DrawModel3D>;
 
 int ClampSegments(int value, int minValue)
 {
@@ -100,9 +109,9 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   id<MTLRenderPipelineState> pipelineStateText_;
   id<MTLRenderPipelineState> pipelineStateModel_;
   id<MTLBuffer>              uniformBuffer_[3];
-  id<MTLBuffer>              vertices_[3];
-  id<MTLBuffer>              verticesPlane_[3];
-  id<MTLBuffer>              textVertices_[3];
+  alloy3d::metal::VertexBuffer<VertexDataPrim3D> vertices_[3];
+  alloy3d::metal::VertexBuffer<VertexDataPrim3D> verticesPlane_[3];
+  alloy3d::metal::VertexBuffer<VertexData3D> textVertices_[3];
   id<MTLTexture>             whiteTexture_;
   NSUInteger                 nbPrimitives_;
   NSUInteger                 nbPlanes_;
@@ -114,7 +123,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   NSMutableDictionary       *textTextureCache_;
   NSMutableArray            *textTextureCacheKeys_;
   std::list<DrawText3DPtr>   drawTextList_;
-  std::list<DrawModel3DPtr>  drawModelList_;
+  std::vector<DrawModel3D>   drawModelList_;
 
   SimpleLock primLock_;
   SimpleLock planeLock_;
@@ -148,6 +157,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   colorAttachment.rgbBlendOperation         = MTLBlendOperationAdd;
 
   pipelineState_ = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
+  [vertexFunction release];
+  [fragmentFunction release];
 
   vertexFunction   = [library newFunctionWithName:@"textVert3d"];
   fragmentFunction = [library newFunctionWithName:@"textFrag3d"];
@@ -157,6 +168,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   pipelineDesc.fragmentFunction = fragmentFunction;
 
   pipelineStateText_ = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
+  [vertexFunction release];
+  [fragmentFunction release];
 
   vertexFunction   = [library newFunctionWithName:@"modelVert3d"];
   fragmentFunction = [library newFunctionWithName:@"modelFrag3d"];
@@ -166,6 +179,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   pipelineDesc.fragmentFunction = fragmentFunction;
 
   pipelineStateModel_ = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
+  [vertexFunction release];
+  [fragmentFunction release];
 
   [pipelineDesc release];
 }
@@ -215,12 +230,6 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   {
     uniformBuffer_[i] = [device_ newBufferWithLength:sizeof(Uniforms)
                                              options:MTLResourceStorageModeShared];
-    vertices_[i]      = [device_ newBufferWithLength:sizeof(VertexDataPrim3D) * 4 * 30000
-                                             options:MTLResourceStorageModeShared];
-    verticesPlane_[i] = [device_ newBufferWithLength:sizeof(VertexDataPrim3D) * 3 * 100000
-                                             options:MTLResourceStorageModeShared];
-    textVertices_[i]  = [device_ newBufferWithLength:sizeof(VertexData3D) * 4 * 5000
-                                             options:MTLResourceStorageModeShared];
   }
   fontRender_           = [[FontRender alloc] init];
   textTextureCache_     = [[NSMutableDictionary alloc] init];
@@ -236,9 +245,6 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   for (int i = 0; i < 3; i++)
   {
     [uniformBuffer_[i] release];
-    [vertices_[i] release];
-    [verticesPlane_[i] release];
-    [textVertices_[i] release];
   }
   [fontRender_ release];
   [textTextureCache_ release];
@@ -253,12 +259,9 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 //
 - (void)drawLine:(simd_float3)from to:(simd_float3)to color:(simd_float4)color
 {
-  primLock_.lock();
-  auto  vtx   = vertices_[pageIndex_];
-  auto *vtx3d = (VertexDataPrim3D *)vtx.contents + nbPrimitives_;
-
+  SimpleGuard guard(primLock_);
+  auto *vtx3d = vertices_[pageIndex_].append(device_, nbPrimitives_, 2);
   nbPrimitives_ += 2;
-  primLock_.unlock();
 
   auto col16        = vcvt_f16_f32(color);
   vtx3d[0].position = from;
@@ -294,12 +297,9 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
               normal:(simd_float3)n2
                color:(simd_float4)color
 {
-  planeLock_.lock();
-  auto  vtx   = verticesPlane_[pageIndex_];
-  auto *vtx3d = (VertexDataPrim3D *)vtx.contents + nbPlanes_;
-
+  SimpleGuard guard(planeLock_);
+  auto *vtx3d = verticesPlane_[pageIndex_].append(device_, nbPlanes_, 3);
   nbPlanes_ += 3;
-  planeLock_.unlock();
 
   auto col16        = vcvt_f16_f32(color);
   vtx3d[0].position = p0;
@@ -351,6 +351,22 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   slices = ClampSegments(slices, 3);
   stacks = ClampSegments(stacks, 2);
 
+  // Reserve the whole sphere once instead of locking and dispatching twice per cell.
+  const NSUInteger maxCells = device_.maxBufferLength / sizeof(VertexDataPrim3D) / 6;
+  if (static_cast<NSUInteger>(slices) > maxCells / static_cast<NSUInteger>(stacks))
+    throw std::length_error("Alloy3D sphere exceeds device capacity");
+  const NSUInteger vertexCount = static_cast<NSUInteger>(slices) * stacks * 6;
+  SimpleGuard guard(planeLock_);
+  auto *vertex = verticesPlane_[pageIndex_].append(device_, nbPlanes_, vertexCount);
+  nbPlanes_ += vertexCount;
+  const auto col16 = vcvt_f16_f32(color);
+  auto emit = [&](simd_float3 position, simd_float3 normal) {
+    vertex->position = position;
+    vertex->normal = normal;
+    vertex->color = col16;
+    ++vertex;
+  };
+
   for (int stack = 0; stack < stacks; stack++)
   {
     float phi0 = Pi * (float)stack / (float)stacks;
@@ -377,8 +393,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
       auto p11 = center + n11 * radius;
       auto p01 = center + n01 * radius;
 
-      [self drawTriangle:p00 normal:n00 p1:p10 normal:n10 p2:p11 normal:n11 color:color];
-      [self drawTriangle:p00 normal:n00 p1:p11 normal:n11 p2:p01 normal:n01 color:color];
+      emit(p00, n00); emit(p10, n10); emit(p11, n11);
+      emit(p00, n00); emit(p11, n11); emit(p01, n01);
     }
   }
 }
@@ -689,16 +705,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     return;
   }
 
-  auto dmodel      = std::make_shared<DrawModel3D>();
-  dmodel->model    = [model retain];
-  dmodel->position = position;
-  dmodel->rotation = rotation;
-  dmodel->scale    = scale;
-  dmodel->color    = color;
-
-  modelLock_.lock();
-  drawModelList_.push_back(dmodel);
-  modelLock_.unlock();
+  SimpleGuard guard(modelLock_);
+  drawModelList_.emplace_back(model, position, rotation, scale, color);
 }
 
 //
@@ -731,15 +739,15 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
       if (nbPrimitives_ > 0)
       {
-        auto vtx = vertices_[pageIndex_];
-        [vtx didModifyRange:NSMakeRange(0, nbPrimitives_ * sizeof(VertexDataPrim3D))];
+        auto vtx = vertices_[pageIndex_].buffer();
+
         [renderEncoder setVertexBuffer:vtx offset:0 atIndex:0];
         [renderEncoder drawPrimitives:MTLPrimitiveTypeLine vertexStart:0 vertexCount:nbPrimitives_];
       }
       if (nbPlanes_ > 0)
       {
-        auto vtx = verticesPlane_[pageIndex_];
-        [vtx didModifyRange:NSMakeRange(0, nbPlanes_ * sizeof(VertexDataPrim3D))];
+        auto vtx = verticesPlane_[pageIndex_].buffer();
+
         [renderEncoder setVertexBuffer:vtx offset:0 atIndex:0];
         [renderEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:nbPlanes_];
       }
@@ -753,9 +761,9 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
       [renderEncoder setCullMode:MTLCullModeNone];
       [renderEncoder setRenderPipelineState:pipelineStateModel_];
 
-      for (auto dmodel : drawModelList_)
+      for (const auto &dmodel : drawModelList_)
       {
-        auto modelMatrix = BuildModelMatrix(dmodel->position, dmodel->rotation, dmodel->scale);
+        auto modelMatrix = BuildModelMatrix(dmodel.position, dmodel.rotation, dmodel.scale);
         auto modelView   = simd_mul(mdlview, modelMatrix);
 
         Uniforms modelUniform{};
@@ -765,12 +773,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
             simd_matrix(modelView.columns[0].xyz, modelView.columns[1].xyz, modelView.columns[2].xyz);
         modelUniform.lightDirectionAndAmbient = uniform->lightDirectionAndAmbient;
         modelUniform.lightColorAndDiffuse     = uniform->lightColorAndDiffuse;
-        modelUniform.modelColor               = dmodel->color;
+        modelUniform.modelColor               = dmodel.color;
 
         [renderEncoder setVertexBytes:&modelUniform length:sizeof(modelUniform) atIndex:1];
         [renderEncoder setFragmentBytes:&modelUniform length:sizeof(modelUniform) atIndex:1];
 
-        for (ModelPart *part in dmodel->model.parts)
+        for (ModelPart *part in dmodel.model.parts)
         {
           [renderEncoder setVertexBuffer:[part vertexBufferForPage:pageIndex_] offset:0 atIndex:0];
           [renderEncoder setVertexBuffer:[part jointMatrixBufferForPage:pageIndex_]
@@ -790,7 +798,10 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
     if (!drawTextList_.empty())
     {
-      auto               textVtx  = textVertices_[pageIndex_];
+      if (drawTextList_.size() > device_.maxBufferLength / sizeof(VertexData3D) / 4)
+        throw std::length_error("Alloy3D 3D text exceeds device capacity");
+      textVertices_[pageIndex_].append(device_, 0, drawTextList_.size() * 4);
+      auto textVtx = textVertices_[pageIndex_].buffer();
       __block NSUInteger vtxCount = 0;
       for (auto dtext : drawTextList_)
       {
@@ -815,7 +826,6 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
         vtx3d[3].color    = col16;
         vtxCount += 4;
       }
-      [textVtx didModifyRange:NSMakeRange(0, vtxCount * sizeof(VertexData3D))];
 
       [renderEncoder setCullMode:MTLCullModeNone];
       [renderEncoder setRenderPipelineState:pipelineStateText_];
@@ -838,6 +848,15 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   [renderEncoder popDebugGroup];
 
   pageIndex_ = (pageIndex_ + 1) % 3;
+}
+
+// No GPU submission: keep the current page available for the next update.
+- (void)discardFrame
+{
+  nbPrimitives_ = 0;
+  nbPlanes_ = 0;
+  drawTextList_.clear();
+  drawModelList_.clear();
 }
 
 @end

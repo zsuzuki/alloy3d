@@ -43,4 +43,6 @@
 - (nonnull NSArray<MetalSprite *> *)createSpritesByImage:(nonnull NSArray<NSString *> *)fileList;
 - (void)drawSprite:(nonnull MetalSprite *)sprite;
 
+- (void)discardFrame;
+
 @end

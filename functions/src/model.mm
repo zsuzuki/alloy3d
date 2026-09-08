@@ -470,11 +470,10 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   id<MTLBuffer>             vertexBuffer_;
   id<MTLBuffer>             indexBuffer_;
   id<MTLBuffer>             jointMatrixBuffers_[3];
+  bool                      jointMatricesDirty_[3];
   id<MTLTexture>            texture_;
   NSUInteger                indexCount_;
   simd_float4               baseColor_;
-  std::vector<SourceVertex> sourceVertices_;
-  std::vector<uint32_t>     sourceIndices_;
   std::vector<simd_float4x4> jointMatrices_;
   int                       nodeIndex_;
   int                       skinIndex_;
@@ -508,6 +507,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     nodeIndex_    = NoIndex;
     skinIndex_    = NoIndex;
     jointMatrices_.push_back(matrix_identity_float4x4);
+    std::fill(std::begin(jointMatricesDirty_), std::end(jointMatricesDirty_), true);
   }
   return self;
 }
@@ -524,18 +524,16 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   if (self != nil)
   {
     device_         = [device retain];
-    sourceVertices_ = vertices;
-    sourceIndices_  = indices;
     texture_        = [texture retain];
     indexCount_     = indices.size();
     baseColor_      = baseColor;
     nodeIndex_      = nodeIndex;
     skinIndex_      = skinIndex;
 
-    std::vector<GpuModelVertex> gpuVertices(sourceVertices_.size());
-    for (size_t i = 0; i < sourceVertices_.size(); i++)
+    std::vector<GpuModelVertex> gpuVertices(vertices.size());
+    for (size_t i = 0; i < vertices.size(); i++)
     {
-      const auto &src = sourceVertices_[i];
+      const auto &src = vertices[i];
       gpuVertices[i].position = src.position;
       gpuVertices[i].normal   = src.normal;
       gpuVertices[i].texcoord = src.texcoord;
@@ -547,15 +545,16 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
     vertexBuffer_ = [device newBufferWithBytes:gpuVertices.data()
                                         length:sizeof(GpuModelVertex) * gpuVertices.size()
-                                       options:MTLResourceStorageModeManaged];
-    indexBuffer_    = [device newBufferWithBytes:sourceIndices_.data()
-                                          length:sizeof(uint32_t) * sourceIndices_.size()
-                                         options:MTLResourceStorageModeManaged];
+                                       options:MTLResourceStorageModeShared];
+    indexBuffer_    = [device newBufferWithBytes:indices.data()
+                                          length:sizeof(uint32_t) * indices.size()
+                                         options:MTLResourceStorageModeShared];
     jointMatrices_.push_back(matrix_identity_float4x4);
+    std::fill(std::begin(jointMatricesDirty_), std::end(jointMatricesDirty_), true);
     for (auto &jointMatrixBuffer : jointMatrixBuffers_)
     {
       jointMatrixBuffer = [device newBufferWithLength:sizeof(simd_float4x4)
-                                              options:MTLResourceStorageModeManaged];
+                                              options:MTLResourceStorageModeShared];
     }
   }
   return self;
@@ -586,14 +585,17 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   const size_t requiredLength = sizeof(simd_float4x4) * jointCount;
   if ((buffer == nil || buffer.length < requiredLength) && device_ != nil)
   {
+    auto replacement = [device_ newBufferWithLength:requiredLength options:MTLResourceStorageModeShared];
+    if (replacement == nil) throw std::bad_alloc();
     [buffer release];
-    buffer = [device_ newBufferWithLength:requiredLength options:MTLResourceStorageModeManaged];
+    buffer = replacement;
+    jointMatricesDirty_[pageIndex % 3] = true;
     jointMatrixBuffers_[pageIndex % 3] = buffer;
   }
-  if (buffer != nil && !jointMatrices_.empty())
+  if (buffer != nil && jointMatricesDirty_[pageIndex % 3] && !jointMatrices_.empty())
   {
     std::memcpy(buffer.contents, jointMatrices_.data(), requiredLength);
-    [buffer didModifyRange:NSMakeRange(0, requiredLength)];
+    jointMatricesDirty_[pageIndex % 3] = false;
   }
   return buffer;
 }
@@ -601,6 +603,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 - (void)updateWithNodeWorldMatrices:(const std::vector<simd_float4x4> &)nodeWorldMatrices
                                skins:(const std::vector<SkinData> &)skins
 {
+  std::fill(std::begin(jointMatricesDirty_), std::end(jointMatricesDirty_), true);
   auto nodeWorld = nodeIndex_ >= 0 && nodeIndex_ < nodeWorldMatrices.size()
                        ? nodeWorldMatrices[nodeIndex_]
                        : matrix_identity_float4x4;

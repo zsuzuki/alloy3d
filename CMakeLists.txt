@@ -18,6 +18,7 @@ include(CMakePackageConfigHelpers)
 
 option(ALLOY3D_BUILD_VIEWER "Build the bundled Alloy3D sample viewer app" ON)
 option(ALLOY3D_INSTALL "Enable install rules for Alloy3D library targets and headers" ON)
+option(ALLOY3D_BUILD_TESTS "Build Metal regression tests and render benchmark" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -103,6 +104,11 @@ target_link_libraries(application
     ${METALKIT_FRAMEWORK}
     ${FOUNDATION_FRAMEWORK}
 )
+
+if(ALLOY3D_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
 
 if(ALLOY3D_BUILD_VIEWER)
   set(ALLOY3D_VIEWER_SOURCES

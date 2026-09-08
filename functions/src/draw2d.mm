@@ -3,6 +3,7 @@
 //
 #import <alloy3d/metal/draw2d.h>
 #include "dsemaphore.h"
+#include <alloy3d/metal/vertex_buffer.h>
 #import <alloy3d/metal/font_render.h>
 #include "shader_def.h"
 #import <alloy3d/metal/sprite.h>
@@ -98,7 +99,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 @implementation Draw2D
 {
   id<MTLDevice>  device_;
-  id<MTLBuffer>  uniformBuffer_;
+  id<MTLBuffer>  uniformBuffer_[3];
   MTLPixelFormat colorFormat_;
   MTLPixelFormat depthFormat_;
   NSUInteger     sampleCount_;
@@ -111,7 +112,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   FontRender                *fontRender_;
   NSMutableDictionary       *textTextureCache_;
   NSMutableArray            *textTextureCacheKeys_;
-  id<MTLBuffer>              textVtx_[3];
+  alloy3d::metal::VertexBuffer<VertexDataPrim2D> textVtx_[3];
   simd_float4                textColor_;
   BOOL                       requestClearText_;
   std::list<DrawStringPtr>   drawStringList;
@@ -119,9 +120,9 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 
   // primitive
   id<MTLRenderPipelineState> pipelineStatePrim_;
-  id<MTLBuffer>              vertices_[3];
+  alloy3d::metal::VertexBuffer<VertexDataPrim2D> vertices_[3];
   NSUInteger                 nbPrimitives_;
-  id<MTLBuffer>              fillVertices_[3];
+  alloy3d::metal::VertexBuffer<VertexDataPrim2D> fillVertices_[3];
   NSUInteger                 nbFillPrimitives_;
 
   //
@@ -141,12 +142,9 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 
 - (void)drawLine:(simd_float2)from to:(simd_float2)to color:(simd_float4)color
 {
-  primLock_.lock();
-  auto  vtx   = vertices_[pageIndex_];
-  auto *vtx2d = (VertexDataPrim2D *)vtx.contents + nbPrimitives_;
-
+  SimpleGuard guard(primLock_);
+  auto *vtx2d = vertices_[pageIndex_].append(device_, nbPrimitives_, 2);
   nbPrimitives_ += 2;
-  primLock_.unlock();
 
   auto col16        = vcvt_f16_f32(color);
   vtx2d[0].position = from * contentScale_;
@@ -157,12 +155,9 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 
 - (void)drawRect:(simd_float2)from to:(simd_float2)to color:(simd_float4)color
 {
-  primLock_.lock();
-  auto  vtx   = vertices_[pageIndex_];
-  auto *vtx2d = (VertexDataPrim2D *)vtx.contents + nbPrimitives_;
-
+  SimpleGuard guard(primLock_);
+  auto *vtx2d = vertices_[pageIndex_].append(device_, nbPrimitives_, 8);
   nbPrimitives_ += 8;
-  primLock_.unlock();
 
   from *= contentScale_;
   to *= contentScale_;
@@ -198,12 +193,9 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
     return;
   }
 
-  primLock_.lock();
-  auto  vtx   = vertices_[pageIndex_];
-  auto *vtx2d = (VertexDataPrim2D *)vtx.contents + nbPrimitives_;
-
+  SimpleGuard guard(primLock_);
+  auto *vtx2d = vertices_[pageIndex_].append(device_, nbPrimitives_, points.size() * 2);
   nbPrimitives_ += points.size() * 2;
-  primLock_.unlock();
 
   auto col16 = vcvt_f16_f32(color);
   for (size_t idx = 0; idx < points.size(); idx++)
@@ -229,12 +221,9 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
     return;
   }
 
-  primLock_.lock();
-  auto  vtx   = vertices_[pageIndex_];
-  auto *vtx2d = (VertexDataPrim2D *)vtx.contents + nbPrimitives_;
-
-  nbPrimitives_ += sides * 2;
-  primLock_.unlock();
+  SimpleGuard guard(primLock_);
+  auto *vtx2d = vertices_[pageIndex_].append(device_, nbPrimitives_, static_cast<NSUInteger>(sides) * 2);
+  nbPrimitives_ += static_cast<NSUInteger>(sides) * 2;
 
   auto col16 = vcvt_f16_f32(color);
 
@@ -257,12 +246,9 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 
 - (void)fillRect:(simd_float2)from to:(simd_float2)to color:(simd_float4)color
 {
-  fillLock_.lock();
-  auto  vtx   = fillVertices_[pageIndex_];
-  auto *vtx2d = (VertexDataPrim2D *)vtx.contents + nbFillPrimitives_;
-
+  SimpleGuard guard(fillLock_);
+  auto *vtx2d = fillVertices_[pageIndex_].append(device_, nbFillPrimitives_, 6);
   nbFillPrimitives_ += 6;
-  fillLock_.unlock();
 
   from *= contentScale_;
   to *= contentScale_;
@@ -294,12 +280,9 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
     return;
   }
 
-  fillLock_.lock();
-  auto  vtx   = fillVertices_[pageIndex_];
-  auto *vtx2d = (VertexDataPrim2D *)vtx.contents + nbFillPrimitives_;
-
+  SimpleGuard guard(fillLock_);
+  auto *vtx2d = fillVertices_[pageIndex_].append(device_, nbFillPrimitives_, points.size() * 3);
   nbFillPrimitives_ += points.size() * 3;
-  fillLock_.unlock();
 
   auto minPos = minPoint(from, to);
   auto maxPos = maxPoint(from, to);
@@ -330,12 +313,9 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
     return;
   }
 
-  fillLock_.lock();
-  auto  vtx   = fillVertices_[pageIndex_];
-  auto *vtx2d = (VertexDataPrim2D *)vtx.contents + nbFillPrimitives_;
-
-  nbFillPrimitives_ += sides * 3;
-  fillLock_.unlock();
+  SimpleGuard guard(fillLock_);
+  auto *vtx2d = fillVertices_[pageIndex_].append(device_, nbFillPrimitives_, static_cast<NSUInteger>(sides) * 3);
+  nbFillPrimitives_ += static_cast<NSUInteger>(sides) * 3;
 
   auto col16 = vcvt_f16_f32(color);
 
@@ -469,6 +449,10 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 
   pipelineStatePrim_ = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
 
+  [vertexFunction release];
+  [fragmentFunction release];
+  [vertexPrimFunction release];
+  [fragmentPrimFunction release];
   [pipelineDesc release];
   return YES;
 }
@@ -480,6 +464,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   depthStateDesc.depthCompareFunction = MTLCompareFunctionAlways;
   depthStateDesc.depthWriteEnabled    = NO;
   depthState_                         = [device_ newDepthStencilStateWithDescriptor:depthStateDesc];
+  [depthStateDesc release];
 }
 
 // 初期化
@@ -493,15 +478,10 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
     colorFormat_   = view.colorPixelFormat;
     depthFormat_   = view.depthStencilPixelFormat;
     sampleCount_   = view.sampleCount;
-    uniformBuffer_ = [device_ newBufferWithLength:sizeof(Uniforms2D)
-                                          options:MTLResourceStorageModeShared];
     contentScale_  = [[NSScreen mainScreen] backingScaleFactor];
     pageIndex_     = 0;
     nbPrimitives_  = 0;
     spriteList     = [[NSMutableArray alloc] init];
-
-    uniformBuffer_.label = @"UniformBuffer2D";
-
     if ([self initializePipeline:library] == NO)
     {
       NSLog(@"init failed pipeline");
@@ -510,12 +490,8 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 
     for (int i = 0; i < 3; i++)
     {
-      textVtx_[i]      = [device_ newBufferWithLength:sizeof(VertexDataPrim2D) * 4 * 5000
-                                         options:MTLResourceStorageModeShared];
-      vertices_[i]     = [device_ newBufferWithLength:sizeof(VertexDataPrim2D) * 4 * 30000
-                                          options:MTLResourceStorageModeShared];
-      fillVertices_[i] = [device_ newBufferWithLength:sizeof(VertexDataPrim2D) * 4 * 30000
-                                              options:MTLResourceStorageModeShared];
+      uniformBuffer_[i] = [device_ newBufferWithLength:sizeof(Uniforms2D)
+                                             options:MTLResourceStorageModeShared];
     }
     requestClearText_ = NO;
     fontRender_            = [[FontRender alloc] init];
@@ -534,14 +510,11 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   [spriteList release];
   for (int i = 0; i < 3; i++)
   {
-    [textVtx_[i] release];
-    [vertices_[i] release];
-    [fillVertices_[i] release];
+    [uniformBuffer_[i] release];
   }
   [fontRender_ release];
   [textTextureCache_ release];
   [textTextureCacheKeys_ release];
-  [uniformBuffer_ release];
   [depthState_ release];
   [pipelineStateText_ release];
   [pipelineStatePrim_ release];
@@ -551,7 +524,11 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 //
 - (void)setupDrawText
 {
-  auto               textVtx  = textVtx_[pageIndex_];
+  const NSUInteger quads = [spriteList count] + drawStringList.size();
+  if (quads > device_.maxBufferLength / sizeof(VertexDataPrim2D) / 4)
+    throw std::length_error("Alloy3D 2D text exceeds device capacity");
+  textVtx_[pageIndex_].append(device_, 0, quads * 4);
+  auto textVtx = textVtx_[pageIndex_].buffer();
   __block NSUInteger vtxCount = 0;
   [spriteList
       enumerateObjectsUsingBlock:^(MetalSprite *_Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
@@ -574,7 +551,6 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
     }
     vtxCount += 4;
   }
-  [textVtx didModifyRange:NSMakeRange(0, vtxCount * sizeof(VertexDataPrim2D))];
 }
 
 //
@@ -604,7 +580,7 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 {
   [renderEncoder pushDebugGroup:@"Draw2D"];
 
-  auto *uniform2d    = (Uniforms2D *)uniformBuffer_.contents;
+  auto *uniform2d    = (Uniforms2D *)uniformBuffer_[pageIndex_].contents;
   uniform2d->size[0] = screenSize.width;
   uniform2d->size[1] = screenSize.height;
 
@@ -618,11 +594,10 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   if (nbFillPrimitives_ > 0)
   {
     // fill primitive draw
-    auto vtx = fillVertices_[pageIndex_];
-    [vtx didModifyRange:NSMakeRange(0, nbFillPrimitives_ * sizeof(VertexDataPrim2D))];
+    auto vtx = fillVertices_[pageIndex_].buffer();
 
-    [renderEncoder setVertexBuffer:uniformBuffer_ offset:0 atIndex:1];
-    [renderEncoder setFragmentBuffer:uniformBuffer_ offset:0 atIndex:1];
+    [renderEncoder setVertexBuffer:uniformBuffer_[pageIndex_] offset:0 atIndex:1];
+    [renderEncoder setFragmentBuffer:uniformBuffer_[pageIndex_] offset:0 atIndex:1];
     [renderEncoder setVertexBuffer:vtx offset:0 atIndex:0];
     [renderEncoder drawPrimitives:MTLPrimitiveTypeTriangle
                       vertexStart:0
@@ -633,11 +608,10 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   if (nbPrimitives_ > 0)
   {
     // primitive draw
-    auto vtx = vertices_[pageIndex_];
-    [vtx didModifyRange:NSMakeRange(0, nbPrimitives_ * sizeof(VertexDataPrim2D))];
+    auto vtx = vertices_[pageIndex_].buffer();
 
-    [renderEncoder setVertexBuffer:uniformBuffer_ offset:0 atIndex:1];
-    [renderEncoder setFragmentBuffer:uniformBuffer_ offset:0 atIndex:1];
+    [renderEncoder setVertexBuffer:uniformBuffer_[pageIndex_] offset:0 atIndex:1];
+    [renderEncoder setFragmentBuffer:uniformBuffer_[pageIndex_] offset:0 atIndex:1];
     [renderEncoder setVertexBuffer:vtx offset:0 atIndex:0];
     [renderEncoder drawPrimitives:MTLPrimitiveTypeLine vertexStart:0 vertexCount:nbPrimitives_];
     nbPrimitives_ = 0;
@@ -646,11 +620,11 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   // text draw
   [renderEncoder setRenderPipelineState:pipelineStateText_];
 
-  [renderEncoder setVertexBuffer:uniformBuffer_ offset:0 atIndex:1];
-  [renderEncoder setFragmentBuffer:uniformBuffer_ offset:0 atIndex:1];
+  [renderEncoder setVertexBuffer:uniformBuffer_[pageIndex_] offset:0 atIndex:1];
+  [renderEncoder setFragmentBuffer:uniformBuffer_[pageIndex_] offset:0 atIndex:1];
 
   [self setupDrawText];
-  [renderEncoder setVertexBuffer:textVtx_[pageIndex_] offset:0 atIndex:0];
+  [renderEncoder setVertexBuffer:textVtx_[pageIndex_].buffer() offset:0 atIndex:0];
   [self drawText:renderEncoder];
 
   [renderEncoder popDebugGroup];
@@ -715,6 +689,16 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
 - (void)drawSprite:(MetalSprite *)sprite
 {
   [spriteList addObject:sprite];
+}
+
+// No GPU submission: keep the current page available for the next update.
+- (void)discardFrame
+{
+  nbPrimitives_ = 0;
+  nbFillPrimitives_ = 0;
+  drawStringList.clear();
+  drawStringListBack.clear();
+  [spriteList removeAllObjects];
 }
 
 @end

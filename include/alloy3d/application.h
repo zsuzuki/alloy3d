@@ -28,6 +28,9 @@ class ApplicationContext
 {
 
 public:
+  // Submit drawing and resource/animation changes from the application callbacks.
+  // Concurrent rendering or mutation of a context/model is not supported.
+  // Transient vertex storage grows on demand and reuses its peak capacity.
   ApplicationContext()          = default;
   virtual ~ApplicationContext() = default;
 

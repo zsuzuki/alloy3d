@@ -380,7 +380,6 @@ public:
 @implementation Renderer
 {
   dispatch_semaphore_t     renderSemaphore_;
-  uint8_t                  uniformBufferIndex_;
   id<MTLDevice>            device_;
   id<MTLCommandQueue>      commandQueue_;
   id<MTLLibrary>           shaderLibrary_;
@@ -434,6 +433,7 @@ public:
     depthStateDesc.depthCompareFunction = MTLCompareFunctionLess;
     depthStateDesc.depthWriteEnabled    = YES;
     depthState_ = [device_ newDepthStencilStateWithDescriptor:depthStateDesc];
+    [depthStateDesc release];
   }
 
   return self;
@@ -441,9 +441,14 @@ public:
 
 - (void)dealloc
 {
+  for (NSUInteger i = 0; i < MaxBuffersInFlight; ++i)
+    dispatch_semaphore_wait(renderSemaphore_, DISPATCH_TIME_FOREVER);
   [depthState_ release];
   [draw2d_ release];
   [draw3d_ release];
+  [shaderLibrary_ release];
+  [commandQueue_ release];
+  dispatch_release(renderSemaphore_);
   [super dealloc];
 }
 
@@ -451,9 +456,12 @@ public:
 {
   dispatch_semaphore_wait(renderSemaphore_, DISPATCH_TIME_FOREVER);
 
-  uniformBufferIndex_ = (uniformBufferIndex_ + 1) % MaxBuffersInFlight;
-
   id<MTLCommandBuffer> commandBuffer = [commandQueue_ commandBuffer];
+  if (commandBuffer == nil)
+  {
+    dispatch_semaphore_signal(renderSemaphore_);
+    return;
+  }
   commandBuffer.label                = @"MyCommand";
 
   __block dispatch_semaphore_t block_sema = renderSemaphore_;
@@ -470,10 +478,18 @@ public:
 
   // render
   auto renderPassDescriptor = view.currentRenderPassDescriptor;
+  auto drawable = view.currentDrawable;
 
-  if (renderPassDescriptor != nil)
+  if (renderPassDescriptor != nil && drawable != nil)
   {
     auto renderEncoder  = [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
+    if (renderEncoder == nil)
+    {
+      [draw2d_ discardFrame];
+      [draw3d_ discardFrame];
+      [commandBuffer commit];
+      return;
+    }
     renderEncoder.label = @"MyRenderEncoder";
 
     [renderEncoder setFrontFacingWinding:MTLWindingCounterClockwise];
@@ -490,7 +506,12 @@ public:
     // Game Render End
 
     [renderEncoder endEncoding];
-    [commandBuffer presentDrawable:view.currentDrawable];
+    [commandBuffer presentDrawable:drawable];
+  }
+  else
+  {
+    [draw2d_ discardFrame];
+    [draw3d_ discardFrame];
   }
 
   [commandBuffer commit];

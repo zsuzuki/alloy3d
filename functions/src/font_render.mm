@@ -75,6 +75,7 @@ const NSUInteger MaxRenderCacheEntries = 512;
   NSColor             *color_;
   NSMutableDictionary *renderCache_;
   NSMutableArray      *renderCacheKeys_;
+  NSString            *cacheKeyPrefix_;
   CGFloat              size_;
 }
 @end
@@ -124,6 +125,8 @@ const NSUInteger MaxRenderCacheEntries = 512;
 // internal function
 - (void)clearAttribute
 {
+  [cacheKeyPrefix_ release];
+  cacheKeyPrefix_ = nil;
   [attributes_ release];
   attributes_ = nil;
 }
@@ -196,17 +199,15 @@ const NSUInteger MaxRenderCacheEntries = 512;
 
 - (nonnull NSString *)CacheKey:(nonnull NSString *)message
 {
-  CGFloat red = 0.0f, green = 0.0f, blue = 0.0f, alpha = 0.0f;
-  auto    rgbColor = [color_ colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
-  [rgbColor getRed:&red green:&green blue:&blue alpha:&alpha];
-  return [NSString stringWithFormat:@"%@\x1f%@\x1f%.8g\x1f%.8g\x1f%.8g\x1f%.8g\x1f%.8g",
-                                    fontName_,
-                                    message,
-                                    size_,
-                                    red,
-                                    green,
-                                    blue,
-                                    alpha];
+  if (cacheKeyPrefix_ == nil)
+  {
+    CGFloat red = 0.0f, green = 0.0f, blue = 0.0f, alpha = 0.0f;
+    auto rgbColor = [color_ colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+    [rgbColor getRed:&red green:&green blue:&blue alpha:&alpha];
+    cacheKeyPrefix_ = [[NSString alloc] initWithFormat:@"%@\x1f%.8g\x1f%.8g\x1f%.8g\x1f%.8g\x1f%.8g\x1f",
+                                                    fontName_, size_, red, green, blue, alpha];
+  }
+  return [cacheKeyPrefix_ stringByAppendingString:message];
 }
 
 //
@@ -273,7 +274,6 @@ const NSUInteger MaxRenderCacheEntries = 512;
   callback(ctx, bbox);
 
   [attrStr release];
-  CFRelease(colorSpace);
   CFRelease(line);
   CFRelease(ctx);
 }
