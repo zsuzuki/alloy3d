@@ -146,6 +146,19 @@ if(ALLOY3D_BUILD_VIEWER)
     )
   endforeach()
 
+  foreach(JOINT_COUNT 25 100 200)
+    set_property(TARGET alloy3d_viewer APPEND PROPERTY LINK_DEPENDS
+      ${CMAKE_CURRENT_SOURCE_DIR}/assets/tests/animation/rig_${JOINT_COUNT}.glb)
+    add_custom_command(TARGET alloy3d_viewer POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_FILE_DIR:alloy3d_viewer>/../Resources/models
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/tests/animation/rig_${JOINT_COUNT}.glb
+        $<TARGET_FILE_DIR:alloy3d_viewer>/../Resources/models/rig_${JOINT_COUNT}.glb
+      COMMENT "COPY: animation fixture (${JOINT_COUNT} joints)"
+    )
+  endforeach()
+
   add_dependencies(alloy3d_viewer shaders)
   add_custom_command(TARGET alloy3d_viewer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory

@@ -3,6 +3,7 @@
 //
 #include <alloy3d/application.h>
 #include <algorithm>
+#include <array>
 #include <alloy3d/camera.h>
 #include <cmath>
 #include <format>
@@ -22,12 +23,11 @@ namespace
 constexpr double WindowWidth  = 1600.0;
 constexpr double WindowHeight = 800.0;
 
-constexpr float GridHalfSize          = 20.0f;
+constexpr float GridHalfSize          = 10.0f;
 constexpr float GridStep              = 1.0f;
-constexpr float ModelScale            = 1.5f;
+constexpr float ModelScale            = 1.0f;
 constexpr float MoveSpeed             = 4.0f;
-constexpr float CameraDist            = 7.0f;
-constexpr float CameraHeight          = 5.0f;
+constexpr float CameraDist            = 18.0f;
 constexpr float CameraTurn            = 2.2f;
 constexpr float DeadZone              = 0.15f;
 constexpr float CubeJumpBlendDuration = 0.35f;
@@ -63,6 +63,7 @@ class MainLoop : public alloy3d::ApplicationLoop
   bool              onKeyA_ = false;
   bool              onKeyS_ = false;
   bool              onKeyD_ = false;
+  std::array<bool, 4> cameraKeys_{}; // left, right, up, down
 
   double windowWidth_  = WindowWidth;
   double windowHeight_ = WindowHeight;
@@ -70,11 +71,13 @@ class MainLoop : public alloy3d::ApplicationLoop
   alloy3d::ApplicationContext::ModelPtr cube_;
   alloy3d::ApplicationContext::ModelPtr cubeJump_;
   alloy3d::ApplicationContext::ModelPtr animatedModel_;
+  std::array<alloy3d::ApplicationContext::ModelPtr, 3> testModels_;
+  float testAnimationTime_ = 0.0f;
 
-  simd_float3 modelPosition_ = simd_make_float3(0.0f, 0.0f, 10.0f);
+  simd_float3 modelPosition_ = simd_make_float3(3.0f, 0.0f, 5.0f);
   float       modelYaw_      = 0.0f;
-  float       cameraYaw_      = 0.0f;
-  float       cameraPitch_    = 0.18f;
+  float       cameraYaw_      = 0.15f;
+  float       cameraPitch_    = 0.32f;
   float       animationTime_  = 0.0f;
   float       cubeJumpTime_               = 0.0f;
   float       cubeJumpBlendTime_          = 0.0f;
@@ -129,6 +132,7 @@ public:
     cube_.reset();
     cubeJump_.reset();
     animatedModel_.reset();
+    for (auto &model : testModels_) model.reset();
     std::cout << std::format("To Close Window\n");
   }
 
@@ -161,6 +165,9 @@ public:
     cube_          = ctx.LoadModel("models/sample_cube.glb");
     cubeJump_      = ctx.LoadModel("models/cube_jump.glb");
     animatedModel_ = ctx.LoadModel("models/animated_bouncer.glb");
+    const std::array<int, 3> jointCounts = {25, 100, 200};
+    for (std::size_t i = 0; i < testModels_.size(); ++i)
+      testModels_[i] = ctx.LoadModel(std::format("models/rig_{}.glb", jointCounts[i]));
 
     ctx.SetTextFontSize(28.0f);
     lastFrameTime_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
@@ -189,9 +196,10 @@ public:
     ctx.SetLight3D(simd_make_float3(-0.35f, -0.8f, -0.45f), 0.35f, 0.85f);
     DrawGrid(ctx);
     DrawModels(ctx);
+    DrawTestModels(ctx, deltaTime);
     DrawCubeJumpLabel(ctx);
     DrawAnimationLabel(ctx);
-
+    ctx.Print("WASD: move bouncer   |   Arrows / right stick: orbit   |   R: reset view", 20.0f, 20.0f);
   }
 
 private:
@@ -213,6 +221,21 @@ private:
             break;
           case alloy3d::keyboard::KeyCode::D:
             onKeyD_ = press;
+            break;
+          case alloy3d::keyboard::KeyCode::LEFT:
+            cameraKeys_[0] = press;
+            break;
+          case alloy3d::keyboard::KeyCode::RIGHT:
+            cameraKeys_[1] = press;
+            break;
+          case alloy3d::keyboard::KeyCode::UP:
+            cameraKeys_[2] = press;
+            break;
+          case alloy3d::keyboard::KeyCode::DOWN:
+            cameraKeys_[3] = press;
+            break;
+          case alloy3d::keyboard::KeyCode::R:
+            if (press) { cameraYaw_ = 0.15f; cameraPitch_ = 0.32f; }
             break;
           default:
             break;
@@ -280,7 +303,7 @@ private:
     const auto moveLength = ClampLength(moveX, moveY);
     if (moveLength > 0.0f)
     {
-      const auto forward = simd_make_float3(std::sin(cameraYaw_), 0.0f, std::cos(cameraYaw_));
+      const auto forward = simd_make_float3(-std::sin(cameraYaw_), 0.0f, -std::cos(cameraYaw_));
       const auto right   = simd_make_float3(std::cos(cameraYaw_), 0.0f, -std::sin(cameraYaw_));
       const auto move    = forward * moveY + right * moveX;
       modelPosition_ += move * (MoveSpeed * deltaTime);
@@ -392,7 +415,7 @@ private:
       return;
     }
 
-    const auto labelPosition = simd_make_float3(2.0f, 2.4f, 0.0f);
+    const auto labelPosition = simd_make_float3(0.0f, 0.2f, 6.5f);
     const auto labelColor    = simd_make_float4(0.45f, 0.95f, 1.0f, 1.0f);
     const auto label = blendingCubeJumpAnimation_
                            ? std::format("{} -> {} {:.0f}%",
@@ -405,25 +428,29 @@ private:
                                          animationCount);
     ctx.DrawText3D(label,
                    labelPosition,
-                   0.45f,
+                   0.3f,
                    labelColor,
                    alloy3d::TextAlign3D::CenterBottom);
   }
 
   void UpdateCamera(alloy3d::ApplicationContext &ctx, const alloy3d::gamepad::PadState &pad, float deltaTime)
   {
-    cameraYaw_ += ApplyDeadZone(pad.rightX) * CameraTurn * deltaTime;
-    cameraPitch_ += ApplyDeadZone(pad.rightY) * CameraTurn * deltaTime;
-    cameraPitch_ = std::clamp(cameraPitch_, -0.35f, 0.8f);
+    cameraYaw_ += (ApplyDeadZone(pad.rightX) + float(cameraKeys_[1]) - float(cameraKeys_[0])) * CameraTurn * deltaTime;
+    cameraPitch_ += (ApplyDeadZone(pad.rightY) + float(cameraKeys_[2]) - float(cameraKeys_[3])) * CameraTurn * deltaTime;
+    cameraPitch_ = std::clamp(cameraPitch_, 0.1f, 0.8f);
 
-    const auto horizontalDistance = CameraDist * std::cos(cameraPitch_);
-    const auto eye = simd_make_float3(
-        modelPosition_.x - std::sin(cameraYaw_) * horizontalDistance,
-        modelPosition_.y + CameraHeight + std::sin(cameraPitch_) * CameraDist,
-        modelPosition_.z - std::cos(cameraYaw_) * horizontalDistance);
-    const auto look = modelPosition_ + simd_make_float3(0.0f, 1.4f, 0.0f);
+    // Orbit the whole exhibition rather than following the moving bouncer.
+    const auto aspect = static_cast<float>(std::max(1.0, windowWidth_) / std::max(1.0, windowHeight_));
+    const auto distance = CameraDist * std::max(1.0f, 1.6f / aspect);
+    const auto look = simd_make_float3(0.0f, 1.7f, 0.0f);
+    const auto horizontalDistance = distance * std::cos(cameraPitch_);
+    const auto eye = look + simd_make_float3(
+        std::sin(cameraYaw_) * horizontalDistance,
+        std::sin(cameraPitch_) * distance,
+        std::cos(cameraYaw_) * horizontalDistance);
     const auto up   = simd_make_float3(0.0f, 1.0f, 0.0f);
 
+    ctx.GetCamera().buildPerspective(0.785398163f, aspect, 0.1f, 100.0f);
     ctx.GetCamera().buildModelView(eye, look, up);
   }
 
@@ -451,18 +478,18 @@ private:
     if (cube_ && cube_->IsLoaded())
     {
       ctx.DrawModel3D(cube_,
+                      simd_make_float3(-3.0f, 0.0f, 5.0f),
                       simd_make_float3(0.0f, 0.0f, 0.0f),
-                      simd_make_float3(0.0f, 0.0f, 0.0f),
-                      simd_make_float3(1.0f, 1.0f, 1.0f),
+                      simd_make_float3(0.65f, 0.65f, 0.65f),
                       simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f));
     }
 
     if (cubeJump_ && cubeJump_->IsLoaded())
     {
       ctx.DrawModel3D(cubeJump_,
-                      simd_make_float3(2.0f, 0.0f, 0.0f),
+                      simd_make_float3(0.0f, 0.0f, 5.0f),
                       simd_make_float3(0.0f, 0.0f, 0.0f),
-                      simd_make_float3(1.0f, 1.0f, 1.0f),
+                      simd_make_float3(0.65f, 0.65f, 0.65f),
                       simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f));
     }
 
@@ -491,13 +518,41 @@ private:
 
     const auto currentAnimationIndex = animatedModel_->CurrentAnimationIndex();
     const auto labelAnimationIndex   = (currentAnimationIndex + AnimationNameOffset) % animationCount;
-    const auto labelPosition = modelPosition_ + simd_make_float3(0.0f, 3.2f, 0.0f);
+    const auto labelPosition = modelPosition_ + simd_make_float3(0.0f, 0.2f, 1.5f);
     const auto labelColor    = simd_make_float4(1.0f, 0.92f, 0.35f, 1.0f);
     ctx.DrawText3D(animatedModel_->AnimationName(labelAnimationIndex),
                    labelPosition,
-                   0.7f,
+                   0.3f,
                    labelColor,
                    alloy3d::TextAlign3D::CenterBottom);
+  }
+
+  void DrawTestModels(alloy3d::ApplicationContext &ctx, float deltaTime)
+  {
+    testAnimationTime_ = std::fmod(testAnimationTime_ + deltaTime, 12.0f);
+    const std::array<const char *, 3> labels = {
+        "25 joints / Wave", "100 joints / Lift", "200 joints / Blend"};
+    for (std::size_t i = 0; i < testModels_.size(); ++i)
+    {
+      const auto &model = testModels_[i];
+      const float x = (static_cast<float>(i) - 1.0f) * 5.0f;
+      if (model && model->IsLoaded())
+      {
+        if (i == 2)
+          model->SetAnimationBlend(0, testAnimationTime_, 1, testAnimationTime_,
+                                   0.5f - 0.5f * std::cos(testAnimationTime_ * 0.523598776f));
+        else
+        {
+          if (model->CurrentAnimationIndex() != i) model->SetAnimation(i);
+          model->SetAnimationTime(testAnimationTime_);
+        }
+        ctx.DrawModel3D(model, simd_make_float3(x, 2.0f, -2.0f),
+                        simd_make_float3(0, 0, 0), simd_make_float3(1, 1, 1));
+      }
+      ctx.DrawText3D(model && model->IsLoaded() ? labels[i] : "Model failed to load",
+                     simd_make_float3(x, 4.9f, -2.0f), 0.35f,
+                     simd_make_float4(0.45f, 0.85f, 1.0f, 1.0f), alloy3d::TextAlign3D::CenterBottom);
+    }
   }
 };
 

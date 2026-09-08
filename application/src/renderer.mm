@@ -519,9 +519,9 @@ public:
 
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size
 {
-  float aspect       = size.width / (float)size.height;
+  float aspect       = size.height > 0 ? size.width / (float)size.height : 1.0f;
   draw2d_.screenSize = size;
-  camera_.buildPerspective(45.0f, aspect, 0.1f, 1000.0f);
+  camera_.buildPerspective(0.785398163f, aspect, 0.1f, 1000.0f);
   appLoop_->ResizeWindow(size.width, size.height);
 }
 

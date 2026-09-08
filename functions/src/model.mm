@@ -43,16 +43,21 @@ struct GpuModelVertex
   float16x4_t color;
 };
 
-struct NodeData
+// Per-frame pose contains only transform values, never names or hierarchy containers.
+struct PoseData
 {
-  std::string             name;
-  int                     parent = NoIndex;
-  std::vector<int>        children;
   simd_float3             translation = simd_make_float3(0.0f, 0.0f, 0.0f);
   simd_float4             rotation    = simd_make_float4(0.0f, 0.0f, 0.0f, 1.0f);
   simd_float3             scale       = simd_make_float3(1.0f, 1.0f, 1.0f);
   simd_float4x4           matrix      = matrix_identity_float4x4;
   bool                    hasMatrix   = false;
+};
+
+struct NodeData
+{
+  std::string      name;
+  int              parent = NoIndex;
+  std::vector<int> children;
 };
 
 struct SkinData
@@ -305,31 +310,33 @@ simd_float4 SampleRotationChannel(const AnimationSamplerData &sampler, float tim
   return LerpQuat(sampler.values[i0], sampler.values[i1], f);
 }
 
-std::vector<NodeData> BuildNodes(const cgltf_data *data)
+std::vector<NodeData> BuildNodes(const cgltf_data *data, std::vector<PoseData> &bindPose)
 {
   std::vector<NodeData> nodes(data->nodes_count);
+  bindPose.resize(data->nodes_count);
   for (cgltf_size i = 0; i < data->nodes_count; i++)
   {
     const auto &src = data->nodes[i];
     auto       &dst = nodes[i];
+    auto       &pose = bindPose[i];
     dst.name        = src.name != nullptr ? src.name : "";
     dst.parent      = NodeIndex(data, src.parent);
     if (src.has_translation)
     {
-      dst.translation = simd_make_float3(src.translation[0], src.translation[1], src.translation[2]);
+      pose.translation = simd_make_float3(src.translation[0], src.translation[1], src.translation[2]);
     }
     if (src.has_rotation)
     {
-      dst.rotation = simd_make_float4(src.rotation[0], src.rotation[1], src.rotation[2], src.rotation[3]);
+      pose.rotation = simd_make_float4(src.rotation[0], src.rotation[1], src.rotation[2], src.rotation[3]);
     }
     if (src.has_scale)
     {
-      dst.scale = simd_make_float3(src.scale[0], src.scale[1], src.scale[2]);
+      pose.scale = simd_make_float3(src.scale[0], src.scale[1], src.scale[2]);
     }
     if (src.has_matrix)
     {
-      dst.matrix    = MatrixFromCgltf(src.matrix);
-      dst.hasMatrix = true;
+      pose.matrix    = MatrixFromCgltf(src.matrix);
+      pose.hasMatrix = true;
     }
     for (cgltf_size childIndex = 0; childIndex < src.children_count; childIndex++)
     {
@@ -629,8 +636,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 @interface MetalModel ()
 
-- (std::vector<NodeData>)samplePoseForAnimation:(NSUInteger)index time:(float)seconds;
-- (void)applyPose:(const std::vector<NodeData> &)pose;
+- (void)samplePoseForAnimation:(NSUInteger)index time:(float)seconds into:(std::vector<PoseData> &)pose;
+- (void)applyPose:(const std::vector<PoseData> &)pose;
 - (void)updatePoseAtTime:(float)seconds;
 
 @end
@@ -640,6 +647,10 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   BOOL                           loaded_;
   NSArray<ModelPart *>          *parts_;
   std::vector<NodeData>          nodes_;
+  std::vector<PoseData>          bindPose_;
+  std::vector<PoseData>          poseScratch_[2];
+  std::vector<simd_float4x4>     localMatrices_;
+  std::vector<bool>              visited_;
   std::vector<simd_float4x4>     currentWorldMatrices_;
   std::vector<SkinData>          skins_;
   std::vector<AnimationClipData> animations_;
@@ -684,7 +695,12 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
     if (result == cgltf_result_success)
     {
-      nodes_      = BuildNodes(data);
+      nodes_      = BuildNodes(data, bindPose_);
+      // Allocate both blend poses and matrix workspace once at model load.
+      for (auto &pose : poseScratch_) pose.resize(nodes_.size());
+      localMatrices_.resize(nodes_.size());
+      currentWorldMatrices_.resize(nodes_.size());
+      visited_.resize(nodes_.size());
       skins_      = BuildSkins(data);
       animations_ = BuildAnimations(data);
 
@@ -978,12 +994,14 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     [self updatePoseAtTime:timeBSeconds];
     return;
   }
-  auto poseA = [self samplePoseForAnimation:animationA time:timeASeconds];
-  auto poseB = [self samplePoseForAnimation:animationB time:timeBSeconds];
-  auto pose  = poseA;
+  auto &pose = poseScratch_[0];
+  const auto &poseB = poseScratch_[1];
+  [self samplePoseForAnimation:animationA time:timeASeconds into:pose];
+  [self samplePoseForAnimation:animationB time:timeBSeconds into:poseScratch_[1]];
   for (size_t i = 0; i < pose.size() && i < poseB.size(); i++)
   {
-    const auto &a = poseA[i];
+    // Each output element depends only on the two corresponding input elements.
+    const auto &a = pose[i];
     const auto &b = poseB[i];
     auto       &p = pose[i];
 
@@ -1065,9 +1083,10 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   visited[index] = true;
 }
 
-- (std::vector<NodeData>)samplePoseForAnimation:(NSUInteger)index time:(float)seconds
+- (void)samplePoseForAnimation:(NSUInteger)index time:(float)seconds into:(std::vector<PoseData> &)pose
 {
-  std::vector<NodeData> pose = nodes_;
+  // Reset every component: channels omitted by a new clip must use the bind pose.
+  pose = bindPose_;
   if (index < animations_.size())
   {
     const auto &clip = animations_[index];
@@ -1107,26 +1126,26 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
       }
     }
   }
-
-  return pose;
 }
 
-- (void)applyPose:(const std::vector<NodeData> &)pose
+- (void)applyPose:(const std::vector<PoseData> &)pose
 {
   if (pose.empty())
   {
     return;
   }
 
-  std::vector<simd_float4x4> localMatrices(pose.size(), matrix_identity_float4x4);
+  auto &localMatrices = localMatrices_;
   for (size_t i = 0; i < pose.size(); i++)
   {
     localMatrices[i] = pose[i].hasMatrix ? pose[i].matrix
                                          : MatrixFromTRS(pose[i].translation, pose[i].rotation, pose[i].scale);
   }
 
-  std::vector<simd_float4x4> worldMatrices(pose.size(), matrix_identity_float4x4);
-  std::vector<bool>          visited(pose.size(), false);
+  auto &worldMatrices = currentWorldMatrices_;
+  auto &visited = visited_;
+  std::fill(worldMatrices.begin(), worldMatrices.end(), matrix_identity_float4x4);
+  std::fill(visited.begin(), visited.end(), false);
   for (size_t i = 0; i < pose.size(); i++)
   {
     [self computeWorldMatricesFromLocal:localMatrices index:static_cast<int>(i) world:worldMatrices visited:visited];
@@ -1136,7 +1155,6 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   {
     [part updateWithNodeWorldMatrices:worldMatrices skins:skins_];
   }
-  currentWorldMatrices_ = std::move(worldMatrices);
 }
 
 - (void)updatePoseAtTime:(float)seconds
@@ -1146,7 +1164,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     return;
   }
 
-  [self applyPose:[self samplePoseForAnimation:animationIndex_ time:seconds]];
+  [self samplePoseForAnimation:animationIndex_ time:seconds into:poseScratch_[0]];
+  [self applyPose:poseScratch_[0]];
 }
 
 @end

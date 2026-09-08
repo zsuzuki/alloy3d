@@ -24,6 +24,7 @@ public:
   CameraData();
   ~CameraData();
 
+  // fovy is the vertical field of view in radians.
   void buildPerspective(float fovy, float aspect, float znear, float zfar);
   void buildModelView(simd_float3 eye, simd_float3 look, simd_float3 up);
   //
