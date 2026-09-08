@@ -22,6 +22,10 @@ typedef void (^RenderCallback)(CGContextRef _Nonnull ctx, CGRect rect);
 - (void)SetColor:(CGFloat)red green:(CGFloat)green blue:(CGFloat)blue;
 - (void)SetColor:(CGFloat)red green:(CGFloat)green blue:(CGFloat)blue alpha:(CGFloat)alpha;
 - (void)ClearFont;
+- (void)clearRenderCache;
+- (void)setCacheLimit:(NSUInteger)limit;
+- (NSUInteger)cacheBytes;
+- (NSUInteger)cacheCount;
 - (nonnull NSString *)CacheKey:(nonnull NSString *)message;
 - (void)Render:(nonnull NSString *)message callback:(nonnull RenderCallback)callback;
 

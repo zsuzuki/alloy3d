@@ -1,6 +1,7 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
+#include <alloy3d/render_memory.h>
 #import <alloy3d/camera.h>
 #import <alloy3d/metal/model.h>
 #import <MetalKit/MetalKit.h>
@@ -88,5 +89,9 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
 - (void)setLightDirection:(simd_float3)direction ambient:(float)ambient diffuse:(float)diffuse;
 
 - (void)discardFrame;
+- (void)beginFrame;
+- (void)setTextBitmapLimit:(NSUInteger)bitmapBytes textureLimit:(NSUInteger)textureBytes;
+- (void)releaseUnusedMemory;
+- (alloy3d::RenderMemoryStats)memoryStats;
 
 @end

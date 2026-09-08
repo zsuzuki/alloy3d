@@ -1,6 +1,7 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
+#include <alloy3d/render_memory.h>
 #import <alloy3d/metal/sprite.h>
 #import <MetalKit/MetalKit.h>
 #include <simd/vector_types.h>
@@ -44,5 +45,9 @@
 - (void)drawSprite:(nonnull MetalSprite *)sprite;
 
 - (void)discardFrame;
+- (void)beginFrame;
+- (void)setTextBitmapLimit:(NSUInteger)bitmapBytes textureLimit:(NSUInteger)textureBytes;
+- (void)releaseUnusedMemory;
+- (alloy3d::RenderMemoryStats)memoryStats;
 
 @end

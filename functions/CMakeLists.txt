@@ -13,6 +13,7 @@ set(SOURCES
   src/draw2d.mm
   src/draw3d.mm
   src/font_render.mm
+  src/memory_cache.mm
   src/game_pad.mm
   src/keyboard.mm
   src/model.mm

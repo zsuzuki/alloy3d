@@ -4,6 +4,7 @@
 #pragma once
 
 #include <alloy3d/model.h>
+#include <alloy3d/render_memory.h>
 #include <alloy3d/sprite.h>
 #include <memory>
 #include <simd/vector_types.h>
@@ -36,6 +37,13 @@ public:
 
   // info
   virtual float ContentScale() const = 0;
+
+  // Optional hooks for custom contexts; implemented by the bundled Metal host.
+  virtual void SetTextCacheBudget(TextCacheBudget budget) {}
+  virtual RenderMemoryStats GetRenderMemoryStats() const { return {}; }
+  // Clear caches now and release vertex pages when next safe to reuse. Queued
+  // draws remain valid. Does not unload models or wait synchronously for the GPU.
+  virtual void ReleaseUnusedMemory() {}
 
   // text
   virtual void Print(std::string_view msg, float x, float y)                 = 0;

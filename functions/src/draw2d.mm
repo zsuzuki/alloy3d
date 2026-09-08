@@ -3,6 +3,7 @@
 //
 #import <alloy3d/metal/draw2d.h>
 #include "dsemaphore.h"
+#import <alloy3d/metal/memory_cache.h>
 #include <alloy3d/metal/vertex_buffer.h>
 #import <alloy3d/metal/font_render.h>
 #include "shader_def.h"
@@ -19,7 +20,6 @@
 
 namespace
 {
-const NSUInteger MaxTextTextureCacheEntries = 512;
 const int        RoundRectCornerSegments    = 8;
 
 // 文字列管理
@@ -110,8 +110,8 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   id<MTLDepthStencilState>   depthState_;
   id<MTLRenderPipelineState> pipelineStateText_;
   FontRender                *fontRender_;
-  NSMutableDictionary       *textTextureCache_;
-  NSMutableArray            *textTextureCacheKeys_;
+  MemoryCache                *textTextureCache_;
+  bool releasePending_[3];
   alloy3d::metal::VertexBuffer<VertexDataPrim2D> textVtx_[3];
   simd_float4                textColor_;
   BOOL                       requestClearText_;
@@ -370,14 +370,8 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
                if (texture == nil)
                {
                  texture = [[Texture alloc] initWithMemory:ctx device:device_];
-                 if ([textTextureCacheKeys_ count] >= MaxTextTextureCacheEntries)
-                 {
-                   NSString *oldCacheKey = [textTextureCacheKeys_ objectAtIndex:0];
-                   [textTextureCache_ removeObjectForKey:oldCacheKey];
-                   [textTextureCacheKeys_ removeObjectAtIndex:0];
-                 }
-                 [textTextureCache_ setObject:texture forKey:cacheKey];
-                 [textTextureCacheKeys_ addObject:cacheKey];
+                 [textTextureCache_ setObject:texture forKey:cacheKey
+                                         cost:texture.object.allocatedSize];
                }
                else
                {
@@ -495,8 +489,8 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
     }
     requestClearText_ = NO;
     fontRender_            = [[FontRender alloc] init];
-    textTextureCache_      = [[NSMutableDictionary alloc] init];
-    textTextureCacheKeys_  = [[NSMutableArray alloc] init];
+    textTextureCache_ = [[MemoryCache alloc] initWithLimit:alloy3d::TextCacheBudget{}.textureBytes / 2];
+
     [fontRender_ SetSize:24.0f];
     [self setTextColorRed:1.0f green:1.0f blue:1.0f alpha:1.0f];
   }
@@ -514,7 +508,6 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   }
   [fontRender_ release];
   [textTextureCache_ release];
-  [textTextureCacheKeys_ release];
   [depthState_ release];
   [pipelineStateText_ release];
   [pipelineStatePrim_ release];
@@ -699,6 +692,46 @@ std::vector<simd_float2> roundRectPoints(simd_float2 from, simd_float2 to, float
   drawStringList.clear();
   drawStringListBack.clear();
   [spriteList removeAllObjects];
+}
+
+// Called after the host acquires a free frame slot, before adding any draws.
+- (void)beginFrame
+{
+  if (releasePending_[pageIndex_] && nbPrimitives_ == 0 && nbFillPrimitives_ == 0)
+  {
+    vertices_[pageIndex_].releaseUnused();
+    fillVertices_[pageIndex_].releaseUnused();
+    textVtx_[pageIndex_].releaseUnused();
+    releasePending_[pageIndex_] = false;
+  }
+}
+
+- (void)setTextBitmapLimit:(NSUInteger)bitmapBytes textureLimit:(NSUInteger)textureBytes
+{
+  [fontRender_ setCacheLimit:bitmapBytes];
+  [textTextureCache_ setLimit:textureBytes];
+}
+
+- (void)releaseUnusedMemory
+{
+  drawStringListBack.clear();
+  [fontRender_ clearRenderCache];
+  [textTextureCache_ removeAllObjects];
+  for (auto &pending : releasePending_) pending = true;
+}
+
+- (alloy3d::RenderMemoryStats)memoryStats
+{
+  alloy3d::RenderMemoryStats stats;
+  for (NSUInteger page = 0; page < 3; ++page)
+  {
+    stats.vertexBufferBytes += vertices_[page].bytes() + fillVertices_[page].bytes() + textVtx_[page].bytes();
+    stats.releasePending |= releasePending_[page];
+  }
+  stats.textBitmapCacheBytes = [fontRender_ cacheBytes];
+  stats.textTextureCacheBytes = [textTextureCache_ bytes];
+  stats.textCacheEntries = [fontRender_ cacheCount] + [textTextureCache_ count];
+  return stats;
 }
 
 @end

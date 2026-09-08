@@ -4,6 +4,7 @@
 #import <alloy3d/metal/draw3d.h>
 #import <alloy3d/camera.h>
 #include "dsemaphore.h"
+#import <alloy3d/metal/memory_cache.h>
 #include <alloy3d/metal/vertex_buffer.h>
 #import <alloy3d/metal/font_render.h>
 #include "shader_def.h"
@@ -21,7 +22,6 @@
 namespace
 {
 constexpr float Pi = 3.14159265358979323846f;
-const NSUInteger MaxTextTextureCacheEntries = 512;
 
 struct DrawText3D
 {
@@ -120,8 +120,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   float                      ambientIntensity_;
   float                      diffuseIntensity_;
   FontRender                *fontRender_;
-  NSMutableDictionary       *textTextureCache_;
-  NSMutableArray            *textTextureCacheKeys_;
+  MemoryCache                *textTextureCache_;
+  bool releasePending_[3];
   std::list<DrawText3DPtr>   drawTextList_;
   std::vector<DrawModel3D>   drawModelList_;
 
@@ -232,8 +232,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                                              options:MTLResourceStorageModeShared];
   }
   fontRender_           = [[FontRender alloc] init];
-  textTextureCache_     = [[NSMutableDictionary alloc] init];
-  textTextureCacheKeys_ = [[NSMutableArray alloc] init];
+  textTextureCache_ = [[MemoryCache alloc] initWithLimit:alloy3d::TextCacheBudget{}.textureBytes / 2];
+
   [fontRender_ SetSize:64.0f];
 
   return self;
@@ -248,7 +248,6 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   }
   [fontRender_ release];
   [textTextureCache_ release];
-  [textTextureCacheKeys_ release];
   [pipelineState_ release];
   [pipelineStateText_ release];
   [pipelineStateModel_ release];
@@ -634,14 +633,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                if (texture == nil)
                {
                  texture = [[Texture alloc] initWithMemory:ctx device:device_];
-                 if ([textTextureCacheKeys_ count] >= MaxTextTextureCacheEntries)
-                 {
-                   NSString *oldCacheKey = [textTextureCacheKeys_ objectAtIndex:0];
-                   [textTextureCache_ removeObjectForKey:oldCacheKey];
-                   [textTextureCacheKeys_ removeObjectAtIndex:0];
-                 }
-                 [textTextureCache_ setObject:texture forKey:cacheKey];
-                 [textTextureCacheKeys_ addObject:cacheKey];
+                 [textTextureCache_ setObject:texture forKey:cacheKey
+                                         cost:texture.object.allocatedSize];
                }
                else
                {
@@ -857,6 +850,45 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   nbPlanes_ = 0;
   drawTextList_.clear();
   drawModelList_.clear();
+}
+
+// Called after the host acquires a free frame slot, before adding any draws.
+- (void)beginFrame
+{
+  if (releasePending_[pageIndex_] && nbPrimitives_ == 0 && nbPlanes_ == 0)
+  {
+    vertices_[pageIndex_].releaseUnused();
+    verticesPlane_[pageIndex_].releaseUnused();
+    textVertices_[pageIndex_].releaseUnused();
+    releasePending_[pageIndex_] = false;
+  }
+}
+
+- (void)setTextBitmapLimit:(NSUInteger)bitmapBytes textureLimit:(NSUInteger)textureBytes
+{
+  [fontRender_ setCacheLimit:bitmapBytes];
+  [textTextureCache_ setLimit:textureBytes];
+}
+
+- (void)releaseUnusedMemory
+{
+  [fontRender_ clearRenderCache];
+  [textTextureCache_ removeAllObjects];
+  for (auto &pending : releasePending_) pending = true;
+}
+
+- (alloy3d::RenderMemoryStats)memoryStats
+{
+  alloy3d::RenderMemoryStats stats;
+  for (NSUInteger page = 0; page < 3; ++page)
+  {
+    stats.vertexBufferBytes += vertices_[page].bytes() + verticesPlane_[page].bytes() + textVertices_[page].bytes();
+    stats.releasePending |= releasePending_[page];
+  }
+  stats.textBitmapCacheBytes = [fontRender_ cacheBytes];
+  stats.textTextureCacheBytes = [textTextureCache_ bytes];
+  stats.textCacheEntries = [fontRender_ cacheCount] + [textTextureCache_ count];
+  return stats;
 }
 
 @end

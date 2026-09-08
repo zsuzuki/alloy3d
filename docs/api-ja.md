@@ -88,6 +88,15 @@ int main()
 - `LoadModel(fname)`
 - `DrawModel3D(model, position, rotation, scale, color)`
 
+描画メモリの管理:
+
+- `SetTextCacheBudget(budget)`: CPU画像・GPUテクスチャの文字キャッシュ予算を設定します。
+- `GetRenderMemoryStats()`: 一時頂点バッファと文字キャッシュの保持量・解放予約状態を返します。
+- `ReleaseUnusedMemory()`: 文字キャッシュを空にし、安全に再利用できる順に頂点ページを解放します。
+
+既定の文字キャッシュ予算は2D・3D合計でCPU 8 MiB、GPU 16 MiBです。
+使用例と統計の範囲は[描画メモリの管理](render-memory-ja.md)を参照してください。
+
 ## CameraData
 
 `CameraData` は投影行列とビュー行列を管理します。`ApplicationContext::GetCamera()`

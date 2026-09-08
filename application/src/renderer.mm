@@ -186,6 +186,31 @@ public:
 
   float ContentScale() const override { return [[NSScreen mainScreen] backingScaleFactor]; }
 
+  void SetTextCacheBudget(alloy3d::TextCacheBudget budget) override
+  {
+    [draw2d_ setTextBitmapLimit:budget.bitmapBytes / 2 textureLimit:budget.textureBytes / 2];
+    [draw3d_ setTextBitmapLimit:budget.bitmapBytes - budget.bitmapBytes / 2
+                  textureLimit:budget.textureBytes - budget.textureBytes / 2];
+  }
+
+  alloy3d::RenderMemoryStats GetRenderMemoryStats() const override
+  {
+    auto stats = [draw2d_ memoryStats];
+    const auto other = [draw3d_ memoryStats];
+    stats.vertexBufferBytes += other.vertexBufferBytes;
+    stats.textBitmapCacheBytes += other.textBitmapCacheBytes;
+    stats.textTextureCacheBytes += other.textTextureCacheBytes;
+    stats.textCacheEntries += other.textCacheEntries;
+    stats.releasePending |= other.releasePending;
+    return stats;
+  }
+
+  void ReleaseUnusedMemory() override
+  {
+    [draw2d_ releaseUnusedMemory];
+    [draw3d_ releaseUnusedMemory];
+  }
+
   void Print(std::string_view msg, float x, float y) override
   {
     [draw2d_ print:StringViewToNSString(msg) x:x y:y];
@@ -474,6 +499,8 @@ public:
   appctx.draw3d_ = draw3d_;
   appctx.camera_ = &camera_;
   appctx.device_ = device_;
+  [draw2d_ beginFrame];
+  [draw3d_ beginFrame];
   appLoop_->Update(appctx);
 
   // render

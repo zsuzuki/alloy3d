@@ -2,6 +2,9 @@
 // Copyright 2023 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
 #import <alloy3d/metal/font_render.h>
+#import <alloy3d/metal/memory_cache.h>
+#include <alloy3d/render_memory.h>
+#include <new>
 #import <AppKit/AppKit.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <CoreText/CTLine.h>
@@ -9,11 +12,6 @@
 #include <algorithm>
 #include <cmath>
 #import <string>
-
-namespace
-{
-const NSUInteger MaxRenderCacheEntries = 512;
-}
 
 //
 //
@@ -73,8 +71,7 @@ const NSUInteger MaxRenderCacheEntries = 512;
   NSFont              *font_;
   NSDictionary        *attributes_;
   NSColor             *color_;
-  NSMutableDictionary *renderCache_;
-  NSMutableArray      *renderCacheKeys_;
+  MemoryCache         *renderCache_;
   NSString            *cacheKeyPrefix_;
   CGFloat              size_;
 }
@@ -92,8 +89,7 @@ const NSUInteger MaxRenderCacheEntries = 512;
   {
     size_            = 20.0f;
     fontName_        = [@"ヒラギノ角ゴシック" copy];
-    renderCache_     = [[NSMutableDictionary alloc] init];
-    renderCacheKeys_ = [[NSMutableArray alloc] init];
+    renderCache_ = [[MemoryCache alloc] initWithLimit:alloy3d::TextCacheBudget{}.bitmapBytes / 2];
     [self makeFont];
     [self SetColor:1.0f green:1.0f blue:1.0f];
   }
@@ -114,12 +110,10 @@ const NSUInteger MaxRenderCacheEntries = 512;
   [font_ release];
   [fontName_ release];
   [renderCache_ release];
-  [renderCacheKeys_ release];
   font_            = nil;
   fontName_        = nil;
   color_           = nil;
   renderCache_     = nil;
-  renderCacheKeys_ = nil;
 }
 
 // internal function
@@ -134,7 +128,6 @@ const NSUInteger MaxRenderCacheEntries = 512;
 - (void)clearRenderCache
 {
   [renderCache_ removeAllObjects];
-  [renderCacheKeys_ removeAllObjects];
 }
 
 - (void)makeFont
@@ -253,6 +246,12 @@ const NSUInteger MaxRenderCacheEntries = 512;
   // レンダリング
   auto ctx = CGBitmapContextCreate(
       nullptr, textWidth, textHeight, 8, 4 * textWidth, colorSpace, kCGImageAlphaPremultipliedLast);
+  if (ctx == nullptr)
+  {
+    [attrStr release];
+    CFRelease(line);
+    throw std::bad_alloc();
+  }
   auto offsetY = descent + bitmapOriginY;
   CGContextSetTextPosition(ctx, -originX, offsetY);
   CTLineDraw(line, ctx);
@@ -261,14 +260,8 @@ const NSUInteger MaxRenderCacheEntries = 512;
 
   auto      bbox       = CGRectMake(originX, layoutOriginY, width, height);
   auto      cacheEntry = [[FontRenderCacheEntry alloc] initWithContext:ctx rect:bbox];
-  if ([renderCacheKeys_ count] >= MaxRenderCacheEntries)
-  {
-    NSString *oldCacheKey = [renderCacheKeys_ objectAtIndex:0];
-    [renderCache_ removeObjectForKey:oldCacheKey];
-    [renderCacheKeys_ removeObjectAtIndex:0];
-  }
-  [renderCache_ setObject:cacheEntry forKey:cacheKey];
-  [renderCacheKeys_ addObject:cacheKey];
+  [renderCache_ setObject:cacheEntry forKey:cacheKey
+                      cost:CGBitmapContextGetBytesPerRow(ctx) * CGBitmapContextGetHeight(ctx)];
   [cacheEntry release];
 
   callback(ctx, bbox);
@@ -277,5 +270,9 @@ const NSUInteger MaxRenderCacheEntries = 512;
   CFRelease(line);
   CFRelease(ctx);
 }
+
+- (void)setCacheLimit:(NSUInteger)limit { [renderCache_ setLimit:limit]; }
+- (NSUInteger)cacheBytes { return [renderCache_ bytes]; }
+- (NSUInteger)cacheCount { return [renderCache_ count]; }
 
 @end

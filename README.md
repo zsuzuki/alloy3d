@@ -16,6 +16,7 @@ Alloy3D was split out from the earlier `metaltest` rendering test repository.
 - [移行メモ](docs/migration-notes.md)
 - [基礎性能・バッファ管理レビュー](docs/performance-review-ja.md)
 - [アニメーション性能改善とテストモデル](docs/animation-performance-ja.md)
+- [文字キャッシュ予算と描画メモリの解放](docs/render-memory-ja.md)
 
 ## Status
 

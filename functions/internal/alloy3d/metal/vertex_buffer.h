@@ -25,6 +25,14 @@ public:
 
   id<MTLBuffer> buffer() const { return buffer_; }
   NSUInteger    capacity() const { return capacity_; }
+  NSUInteger bytes() const { return capacity_ * sizeof(Vertex); }
+  // Only called at the beginning of a frame whose page is safe for CPU reuse.
+  void releaseUnused()
+  {
+    [buffer_ release];
+    buffer_ = nil;
+    capacity_ = 0;
+  }
 
   // Preserve only the current frame's used vertices. Allocation failure leaves
   // the old buffer intact; callers advance their count only after success.
