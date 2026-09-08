@@ -57,6 +57,7 @@ float ClampLength(float &x, float &y)
 //
 class MainLoop : public alloy3d::ApplicationLoop
 {
+  bool                       shadowEnabled_ = true, shadowChanged_ = true, onKeyH_ = false;
   alloy3d::gamepad::PadState padState_{};
   alloy3d::gamepad::PadState padStateUpdate_{};
   bool              onKeyW_ = false;
@@ -204,6 +205,12 @@ public:
       instance.scale    = {.45f, .65f, .45f};
       instance.color    = {.5f + .05f * float(i % 9), .85f, 1, 1};
     }
+    alloy3d::DirectionalLight3D light;
+    light.direction = {-.35f, -.8f, -.45f};
+    light.color     = {1, .96f, .9f};
+    light.ambient   = .25f;
+    light.diffuse   = .75f;
+    ctx.SetDirectionalLight3D(light);
     ctx.SetTextFontSize(28.0f);
     lastFrameTime_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
   }
@@ -228,13 +235,25 @@ public:
     UpdateAnimatedModel(pad, deltaTime);
     UpdateCamera(ctx, pad, deltaTime);
 
-    ctx.SetLight3D(simd_make_float3(-0.35f, -0.8f, -0.45f), 0.35f, 0.85f);
+    if (shadowChanged_)
+    {
+      alloy3d::DirectionalShadow3D shadow;
+      shadow.enabled = shadowEnabled_;
+      shadow.bounds  = {{-11, -.1f, -11}, {11, 8, 11}};
+      ctx.SetDirectionalShadow3D(shadow);
+      shadowChanged_ = false;
+    }
     if (releaseMemory_)
     {
       ctx.ReleaseUnusedMemory();
       releaseMemory_ = false;
     }
     sceneBounds_ = {};
+    ctx.DrawPlane3D(simd_make_float3(-10, -.02f, -10),
+                    simd_make_float3(10, -.02f, -10),
+                    simd_make_float3(10, -.02f, 10),
+                    simd_make_float3(-10, -.02f, 10),
+                    simd_make_float4(.18f, .20f, .23f, 1));
     DrawGrid(ctx);
     if (materialDemo_)
       DrawMaterialDemo(ctx, deltaTime);
@@ -263,7 +282,10 @@ public:
                   : "O: Perspective   |   F: fit models   |   I: instances   |   M: materials",
               20,
               58);
-    ctx.Print("WASD: move   |   Arrows / right stick: orbit   |   R: reset", 20.0f, 20.0f);
+    ctx.Print(shadowEnabled_ ? "WASD: move   |   Arrows: orbit   |   R: reset   |   H: shadows ON"
+                             : "WASD: move   |   Arrows: orbit   |   R: reset   |   H: shadows OFF",
+              20,
+              20);
   }
 
 private:
@@ -306,6 +328,14 @@ private:
               releaseMemory_ = true;
             }
             onKeyI_ = press;
+            break;
+          case alloy3d::keyboard::KeyCode::H:
+            if (press && !onKeyH_)
+            {
+              shadowEnabled_ = !shadowEnabled_;
+              shadowChanged_ = true;
+            }
+            onKeyH_ = press;
             break;
           case alloy3d::keyboard::KeyCode::M:
             if (press && !onKeyM_)

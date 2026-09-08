@@ -2,6 +2,7 @@
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
 #include "shader_def.h"
+#include "shadow.h"
 
 #include <metal_stdlib>
 using namespace metal;
@@ -14,6 +15,7 @@ struct v2f
     float2 texcoord;
     float4 modelColor [[flat]];
     uint   mirrored [[flat]];
+    float4 shadowPosition;
 };
 
 //
@@ -96,6 +98,7 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   o.texcoord   = vd.texcoord;
   o.color      = vd.color;
   o.modelColor = cameraData.modelColor;
+  o.shadowPosition = cameraData.shadowTransform * cameraData.worldTransform * position;
   o.mirrored   = orientation * determinant(float3x3(cameraData.worldTransform[0].xyz,
                                                     cameraData.worldTransform[1].xyz,
                                                     cameraData.worldTransform[2].xyz)) <
@@ -121,6 +124,7 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   o.texcoord   = vd.texcoord;
   o.color      = vd.color;
   o.modelColor = instance.color;
+  o.shadowPosition = cameraData.shadowTransform * instance.modelView * position;
   o.mirrored   = orientation * determinant(float3x3(instance.modelView[0].xyz,
                                                     instance.modelView[1].xyz,
                                                     instance.modelView[2].xyz)) <
@@ -148,7 +152,8 @@ fragment half4 simpleFrag3d( v2f in [[stage_in]], texture2d< half, access::sampl
 fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]],
                            device const Uniforms          &cameraData [[buffer(1)]],
                            constant MaterialUniforms      &material [[buffer(5)]],
-                           texture2d<half, access::sample> tex [[texture(0)]])
+                           texture2d<half, access::sample> tex [[texture(0)]],
+                           depth2d<float>                  shadowMap [[texture(1)]])
 {
   // Fragment culling allows mixed mirrored placements in one instance batch.
   const bool front = frontFacing != bool(in.mirrored);
@@ -171,6 +176,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   float3 l          = normalize(-cameraData.lightDirectionAndAmbient.xyz);
   half   ambient    = half(saturate(cameraData.lightDirectionAndAmbient.w));
   half   diffuse    = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
+  diffuse *= ShadowVisibility(in.shadowPosition, cameraData.shadowParameters, shadowMap);
   half3  lightColor = half3(cameraData.lightColorAndDiffuse.xyz);
   return half4(baseColor.rgb * (ambient + diffuse * lightColor), baseColor.a);
 }
@@ -197,4 +203,19 @@ fragment half4 textFrag3d(v2f in [[stage_in]], texture2d<half, access::sample> t
     constexpr sampler s(address::clamp_to_edge, filter::linear);
     half4 texel = tex.sample(s, in.texcoord).rgba;
     return in.color * texel;
+}
+
+// Same skinning, winding and MASK coverage as the color pass. No color attachment.
+fragment void shadowModelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]],
+                                constant MaterialUniforms      &material [[buffer(5)]],
+                                texture2d<half, access::sample> tex [[texture(0)]])
+{
+  if ((frontFacing == bool(in.mirrored)) && material.parameters.z == 0)
+    discard_fragment();
+  if (material.parameters.x == 1)
+  {
+    constexpr sampler s(address::repeat, filter::linear);
+    if (float(in.color.a * tex.sample(s, in.texcoord).a) < material.parameters.y)
+      discard_fragment();
+  }
 }

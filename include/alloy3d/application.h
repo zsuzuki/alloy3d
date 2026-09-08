@@ -3,6 +3,7 @@
 //
 #pragma once
 
+#include <alloy3d/lighting.h>
 #include <alloy3d/model.h>
 #include <alloy3d/model_instance.h>
 #include <alloy3d/render_memory.h>
@@ -74,6 +75,13 @@ public:
 
   // Direction the light travels, in world coordinates.
   virtual void SetLight3D(simd_float3 direction, float ambient, float diffuse) = 0;
+  // Finite color/ambient/diffuse in [0,1]. Bundled host validates transactionally.
+  virtual void SetDirectionalLight3D(const DirectionalLight3D &light)
+  {
+    SetLight3D(light.direction, light.ambient, light.diffuse);
+  }
+  // Returns false on unsupported custom contexts; bundled host throws on invalid settings.
+  virtual bool SetDirectionalShadow3D(const DirectionalShadow3D &shadow) { return false; }
   virtual void DrawLine3D(simd_float3 from, simd_float3 to, simd_float4 color) = 0;
   virtual void DrawTriangle3D(simd_float3 p0, simd_float3 p1, simd_float3 p2,
                               simd_float4 color)                               = 0;

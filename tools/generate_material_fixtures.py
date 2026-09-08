@@ -8,7 +8,7 @@ import zlib
 
 KINDS = ('opaque_alpha', 'mask_checker', 'mask_cutoff', 'mask_equal', 'blend_red',
          'blend_blue', 'blend_parts', 'single_sided', 'double_sided', 'unlit',
-         'mirrored_node', 'mirrored_skin', 'animated_blend')
+         'mirrored_node', 'mirrored_skin', 'animated_blend', 'animated_caster', 'blend_lit')
 
 
 def generate(kind):
@@ -89,14 +89,14 @@ def generate(kind):
                               alphaMode='BLEND', extensions=dict(KHR_materials_unlit={})))
     if kind == 'mirrored_node':
         nodes[0]['scale'] = [-1,1,1]
-    if kind in ('mirrored_skin','animated_blend'):
+    if kind in ('mirrored_skin','animated_blend','animated_caster'):
         nodes[0]['skin'] = 0
         nodes.append(dict(name='Joint', scale=[-1 if kind == 'mirrored_skin' else 1,1,1]))
         doc['scenes'][0]['nodes'].append(1)
         doc['skins'] = [dict(joints=[1])]
         attrs['JOINTS_0'] = accessor([0,0,0,0]*4,4,'H')
         attrs['WEIGHTS_0'] = accessor([1,0,0,0]*4,4)
-        if kind == 'animated_blend':
+        if kind in ('animated_blend', 'animated_caster'):
             doc['animations'] = [dict(name='Depth',samplers=[dict(input=accessor([0,1,2],1),
                 output=accessor([0,0,.2, 0,0,.8, 0,0,.2],3), interpolation='LINEAR')],
                 channels=[dict(sampler=0,target=dict(node=1,path='translation'))])]

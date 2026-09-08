@@ -3,6 +3,7 @@
 //
 #import <MetalKit/MetalKit.h>
 #import <alloy3d/camera.h>
+#include <alloy3d/lighting.h>
 #import <alloy3d/metal/model.h>
 #include <alloy3d/model_instance.h>
 #include <alloy3d/render_memory.h>
@@ -89,6 +90,12 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
             scale:(simd_float3)scale
             color:(simd_float4)color;
 - (void)setLightDirection:(simd_float3)direction ambient:(float)ambient diffuse:(float)diffuse;
+- (void)setDirectionalLight:(const alloy3d::DirectionalLight3D &)light;
+- (void)setDirectionalShadow:(const alloy3d::DirectionalShadow3D &)shadow;
+// Encode before the color pass, using the same queue, camera and current frame page.
+- (void)encodeShadowMap:(nonnull id<MTLCommandBuffer>)commands
+                 camera:(nonnull alloy3d::CameraData *)camera;
+- (NSUInteger)shadowDrawCallCount;
 
 - (void)discardFrame;
 - (void)drawModelInstances:(nonnull MetalModel *)model

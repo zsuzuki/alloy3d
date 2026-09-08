@@ -16,6 +16,7 @@ struct RenderMemoryStats
   // Library-owned capacity across all three frame pages, not process RSS.
   std::size_t vertexBufferBytes     = 0;
   std::size_t instanceBufferBytes   = 0;
+  std::size_t shadowMapBytes        = 0; // Depth texels across frame pages (plus 1 fallback texel).
   std::size_t textBitmapCacheBytes  = 0;
   std::size_t textTextureCacheBytes = 0;
   std::size_t textCacheEntries      = 0;

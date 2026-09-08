@@ -36,6 +36,7 @@ typedef NS_ENUM(EnumBackingType, VertexAttribute) {
 
 typedef NS_ENUM(EnumBackingType, TextureIndex) {
   TextureIndexColor = 0,
+  TextureIndexShadow = 1,
 };
 
 typedef struct
@@ -46,6 +47,8 @@ typedef struct
   simd_float4     lightDirectionAndAmbient;
   simd_float4     lightColorAndDiffuse;
   simd_float4     modelColor;
+  matrix_float4x4 shadowTransform;  // view space -> light clip space
+  simd_float4     shadowParameters; // enabled, depth bias, reserved, reserved
 } Uniforms;
 
 struct MaterialUniforms

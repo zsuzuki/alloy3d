@@ -75,6 +75,8 @@ int main()
 
 - `GetCamera()`
 - `SetLight3D(direction, ambient, diffuse)`
+- `SetDirectionalLight3D(light)`: 色・方向・環境光・拡散光を設定します。
+- `SetDirectionalShadow3D(shadow)`: 影の有効化・範囲・解像度・バイアスを設定します。
 - `DrawLine3D(from, to, color)`
 - `DrawTriangle3D(p0, p1, p2, color)`
 - `DrawPlane3D(p0, p1, p2, p3, color)`
@@ -92,6 +94,7 @@ int main()
 
 使い分けと制約は[インスタンス描画とモデル資源の共有](model-instances-ja.md)を参照してください。
 `SetLight3D` の方向はワールド座標で光が進む向きです。
+光源と影の入力制約・描画対象・資源管理は[シャドウマップ](shadows-ja.md)を参照してください。
 GLBの透明モード・両面・Unlitは自動反映します。[基本マテリアル](materials-ja.md)も参照してください。
 
 描画メモリの管理:

@@ -203,6 +203,7 @@ public:
     const auto other = [draw3d_ memoryStats];
     stats.vertexBufferBytes += other.vertexBufferBytes;
     stats.instanceBufferBytes += other.instanceBufferBytes;
+    stats.shadowMapBytes += other.shadowMapBytes;
     stats.textBitmapCacheBytes += other.textBitmapCacheBytes;
     stats.textTextureCacheBytes += other.textTextureCacheBytes;
     stats.textCacheEntries += other.textCacheEntries;
@@ -271,6 +272,16 @@ public:
   }
 
   alloy3d::CameraData &GetCamera() override { return *camera_; }
+
+  void SetDirectionalLight3D(const alloy3d::DirectionalLight3D &light) override
+  {
+    [draw3d_ setDirectionalLight:light];
+  }
+  bool SetDirectionalShadow3D(const alloy3d::DirectionalShadow3D &shadow) override
+  {
+    [draw3d_ setDirectionalShadow:shadow];
+    return true;
+  }
 
   void SetLight3D(simd_float3 direction, float ambient, float diffuse) override
   {
@@ -544,6 +555,7 @@ public:
 
   if (renderPassDescriptor != nil && drawable != nil)
   {
+    [draw3d_ encodeShadowMap:commandBuffer camera:&camera_];
     auto renderEncoder  = [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
     if (renderEncoder == nil)
     {

@@ -2,6 +2,7 @@
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
 #include "shader_def.h"
+#include "shadow.h"
 
 #include <metal_stdlib>
 using namespace metal;
@@ -11,6 +12,7 @@ struct v2f
   float4 position [[position]];
   float3 normal;
   half4  color;
+  float4 shadowPosition;
 };
 
 //
@@ -27,11 +29,14 @@ vertex v2f primVert3d(device const VertexDataPrim3D *vertexData [[buffer(0)]],
   o.position = pos;
   o.normal   = cameraData.worldNormalTransform * vd.normal;
   o.color    = vd.color;
+  o.shadowPosition =
+      cameraData.shadowTransform * cameraData.worldTransform * float4(vd.position, 1);
 
   return o;
 }
 
-fragment half4 primFrag3d(v2f in [[stage_in]], device const Uniforms &cameraData [[buffer(1)]])
+fragment half4 primFrag3d(v2f in [[stage_in]], device const Uniforms &cameraData [[buffer(1)]],
+                          depth2d<float> shadowMap [[texture(1)]])
 {
   half4 baseColor    = in.color;
   float normalLength = length(in.normal);
@@ -44,8 +49,15 @@ fragment half4 primFrag3d(v2f in [[stage_in]], device const Uniforms &cameraData
   float3 l          = normalize(-cameraData.lightDirectionAndAmbient.xyz);
   half   ambient    = half(saturate(cameraData.lightDirectionAndAmbient.w));
   half   diffuse    = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
+  diffuse *= ShadowVisibility(in.shadowPosition, cameraData.shadowParameters, shadowMap);
   half3  lightColor = half3(cameraData.lightColorAndDiffuse.xyz);
   half3  illum      = baseColor.rgb * (ambient + diffuse * lightColor);
 
   return half4(illum, baseColor.a);
+}
+
+fragment void shadowPrimFrag3d(v2f in [[stage_in]])
+{
+  if (in.color.a < 1)
+    discard_fragment();
 }

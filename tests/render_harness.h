@@ -112,6 +112,7 @@ struct Harness
     pass.stencilAttachment.texture       = depth;
     pass.stencilAttachment.loadAction    = MTLLoadActionClear;
     commands[slot]                       = [[queue commandBuffer] retain];
+    [draw encodeShadowMap:commands[slot] camera:&camera];
     auto encoder                         = [commands[slot] renderCommandEncoderWithDescriptor:pass];
     [encoder setDepthStencilState:depthState];
     [draw render:encoder camera:&camera];

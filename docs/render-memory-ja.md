@@ -67,6 +67,7 @@ CPU画像とGPUテクスチャは別々の予算を持つ。それぞれを2D用
 | フィールド | 内容 |
 | --- | --- |
 | `vertexBufferBytes` | 一時頂点バッファの全3ページの確保容量。使用頂点数ではない |
+| `shadowMapBytes` | 深度マップ全ページのテクセル容量。無効時用の1テクセルを含む |
 | `instanceBufferBytes` | インスタンス描画の変換・色バッファの全3ページの確保容量 |
 | `textBitmapCacheBytes` | キャッシュに残るCPU画像のバイト数 |
 | `textTextureCacheBytes` | キャッシュに残るGPUテクスチャの割当バイト数 |
@@ -104,3 +105,5 @@ ctest --test-dir build-test --output-on-failure
 コマンド送信前にキャッシュから取り除ける根拠は、通常の
 [`commandBuffer`](https://developer.apple.com/documentation/metal/mtlcommandqueue/makecommandbuffer%28%29?language=objc)
 が参照リソースを保持する仕様による。
+
+影の解像度変更・無効化による解放もフレームページの安全な再利用時に行います。詳細は[シャドウマップ](shadows-ja.md)を参照してください。

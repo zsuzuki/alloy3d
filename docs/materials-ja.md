@@ -90,7 +90,8 @@ python3 tools/generate_material_fixtures.py --check
 描画時のアルファによるフェードは引き続き使えます。
 
 ライブラリと同時に `shaders.metallib` も更新してください。
-金属度・粗さ、法線マップ、IBL、影、カスタムシェーダーAPIは今後の対象です。
+平行光源の影は[シャドウマップ](shadows-ja.md)に対応しています。
+金属度・粗さ、法線マップ、IBL、カスタムシェーダーAPIは今後の対象です。
 テクスチャは既存の埋め込み画像／TEXCOORD_0／固定repeat・linearサンプラーの対応範囲を維持します。
 
 仕様の参照先:

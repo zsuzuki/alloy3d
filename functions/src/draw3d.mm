@@ -13,6 +13,7 @@
 #import <alloy3d/metal/texture.h>
 #include <alloy3d/metal/vertex_buffer.h>
 #include <arm_neon.h>
+#include <array>
 #include <cmath>
 #include <list>
 #include <memory>
@@ -110,6 +111,29 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                      simd_make_float4(axisZ * scale.z, 0.0f),
                      simd_make_float4(position.x, position.y, position.z, 1.0f));
 }
+alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settings,
+                                      simd_float3                         direction)
+{
+  if (!settings.bounds.isValid() || settings.resolution < 64 || settings.resolution > 4096 ||
+      !std::isfinite(settings.depthBias) || settings.depthBias < 0 || settings.depthBias > .1f ||
+      !std::isfinite(settings.slopeScale) || settings.slopeScale < 0 || settings.slopeScale > 8)
+    throw std::invalid_argument("Alloy3D shadow requires finite bounds, resolution 64..4096, bias "
+                                "0..0.1 and slope scale 0..8");
+  const auto  center = settings.bounds.min * .5f + settings.bounds.max * .5f;
+  const float radius =
+      std::max(.01f, simd_length(settings.bounds.max * .5f - settings.bounds.min * .5f));
+  alloy3d::CameraData camera;
+  camera.buildModelView(center - direction * (radius * 2 + 1), center, {0, 1, 0});
+  const auto  bounds = settings.bounds.transformed(camera.getModelViewMatrix());
+  const float extent = std::max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y);
+  const float margin = std::max(.01f, radius * .05f);
+  camera.buildOrthographic(std::max(.01f, extent * 1.05f),
+                           1,
+                           std::max(.001f, -bounds.max.z - margin),
+                           -bounds.min.z + margin);
+  return camera;
+}
+
 } // namespace
 
 @interface Draw3D ()
@@ -152,6 +176,14 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
   SimpleLock primLock_;
   SimpleLock planeLock_;
+  alloy3d::DirectionalShadow3D shadowSettings_;
+  id<MTLTexture>               shadowMaps_[3];
+  id<MTLTexture>               shadowFallback_;
+  id<MTLRenderPipelineState>   shadowPipelines_[3]; // primitive, model, instanced model
+  simd_float4x4                lightViewProjection_;
+  bool                         shadowReady_, instancesPrepared_;
+  NSUInteger                   shadowDrawCalls_;
+
   SimpleLock textLock_;
   SimpleLock modelLock_;
 }
@@ -228,6 +260,32 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   [vertexFunction release];
 
   [pipelineDesc release];
+  auto shadowDesc                          = [[MTLRenderPipelineDescriptor alloc] init];
+  shadowDesc.depthAttachmentPixelFormat    = MTLPixelFormatDepth32Float;
+  const std::array<NSString *, 3> vertices = {
+      @"primVert3d", @"modelVert3d", @"modelInstanceVert3d"};
+  for (int i = 0; i < 3; ++i)
+  {
+    shadowDesc.vertexFunction = [library newFunctionWithName:vertices[i]];
+    shadowDesc.fragmentFunction =
+        [library newFunctionWithName:i == 0 ? @"shadowPrimFrag3d" : @"shadowModelFrag3d"];
+    shadowPipelines_[i] = [device_ newRenderPipelineStateWithDescriptor:shadowDesc error:&error];
+    [shadowDesc.vertexFunction release];
+    [shadowDesc.fragmentFunction release];
+    if (!shadowPipelines_[i])
+      throw std::runtime_error("Alloy3D shadow pipeline creation failed");
+  }
+  [shadowDesc release];
+  auto depthDesc =
+      [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
+                                                         width:1
+                                                        height:1
+                                                     mipmapped:NO];
+  depthDesc.storageMode = MTLStorageModePrivate;
+  depthDesc.usage       = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
+  shadowFallback_       = [device_ newTextureWithDescriptor:depthDesc];
+  if (!shadowFallback_)
+    throw std::bad_alloc();
 }
 
 - (void)initializeWhiteTexture
@@ -290,6 +348,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   for (int i = 0; i < 3; i++)
   {
     [uniformBuffer_[i] release];
+    [shadowMaps_[i] release];
+    [shadowPipelines_[i] release];
   }
   [fontRender_ release];
   [textTextureCache_ release];
@@ -302,6 +362,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   }
   [pipelineStateModelInstances_ release];
   [whiteTexture_ release];
+  [shadowFallback_ release];
   [super dealloc];
 }
 
@@ -728,12 +789,163 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 //
 - (void)setLightDirection:(simd_float3)direction ambient:(float)ambient diffuse:(float)diffuse
 {
-  if (simd_length_squared(direction) > 0.000001f)
+  if (std::isfinite(direction.x) && std::isfinite(direction.y) && std::isfinite(direction.z))
   {
-    lightDirection_ = simd_normalize(direction);
+    auto wide = simd_make_double3(direction.x, direction.y, direction.z);
+    if (simd_length_squared(wide) > 0.000001)
+    {
+      wide                  = simd_normalize(wide);
+      const auto normalized = simd_make_float3(wide.x, wide.y, wide.z);
+      if (shadowSettings_.enabled)
+        BuildShadowCamera(shadowSettings_, normalized);
+      lightDirection_ = normalized;
+    }
   }
   ambientIntensity_ = fmaxf(0.0f, fminf(1.0f, ambient));
   diffuseIntensity_ = fmaxf(0.0f, fminf(1.0f, diffuse));
+}
+
+- (void)setDirectionalLight:(const alloy3d::DirectionalLight3D &)light
+{
+  for (int i = 0; i < 3; ++i)
+    if (!std::isfinite(light.direction[i]) || !std::isfinite(light.color[i]) ||
+        light.color[i] < 0 || light.color[i] > 1)
+      throw std::invalid_argument(
+          "Alloy3D directional light requires finite direction and RGB in [0,1]");
+  if (!std::isfinite(light.ambient) || !std::isfinite(light.diffuse) || light.ambient < 0 ||
+      light.ambient > 1 || light.diffuse < 0 || light.diffuse > 1)
+    throw std::invalid_argument("Alloy3D light intensities must be in [0,1]");
+  auto direction = simd_make_double3(light.direction.x, light.direction.y, light.direction.z);
+  if (simd_length_squared(direction) == 0)
+    throw std::invalid_argument("Alloy3D light direction is zero");
+  direction             = simd_normalize(direction);
+  const auto normalized = simd_make_float3(direction.x, direction.y, direction.z);
+  if (shadowSettings_.enabled)
+    BuildShadowCamera(shadowSettings_, normalized);
+  lightDirection_   = normalized;
+  lightColor_       = light.color;
+  ambientIntensity_ = light.ambient;
+  diffuseIntensity_ = light.diffuse;
+}
+
+- (void)setDirectionalShadow:(const alloy3d::DirectionalShadow3D &)settings
+{
+  BuildShadowCamera(settings, lightDirection_); // validate before changing live settings
+  shadowSettings_ = settings;
+}
+
+- (void)prepareInstances:(simd_float4x4)view
+{
+  if (instancesPrepared_)
+    return;
+  auto instances = instanceBuffers_[pageIndex_].append(device_, 0, modelInstances_.size());
+  for (NSUInteger i = 0; i < modelInstances_.size(); ++i)
+  {
+    const auto &source = modelInstances_[i];
+    auto       &target = instances[i];
+    target.modelView =
+        simd_mul(view, BuildModelMatrix(source.position, source.rotation, source.scale));
+    target.normalTransform = alloy3d::metal::NormalMatrix(target.modelView);
+    target.color           = source.color;
+  }
+  instancesPrepared_ = true;
+}
+
+- (NSUInteger)shadowDrawCallCount
+{
+  return shadowDrawCalls_;
+}
+
+- (void)encodeShadowMap:(id<MTLCommandBuffer>)commands camera:(alloy3d::CameraData *)camera
+{
+  shadowReady_     = false;
+  shadowDrawCalls_ = 0;
+  if (!shadowSettings_.enabled)
+    return;
+  auto &map = shadowMaps_[pageIndex_];
+  if (!map || map.width != shadowSettings_.resolution)
+  {
+    auto desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
+                                                                   width:shadowSettings_.resolution
+                                                                  height:shadowSettings_.resolution
+                                                               mipmapped:NO];
+    desc.storageMode = MTLStorageModePrivate;
+    desc.usage       = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+    auto replacement = [device_ newTextureWithDescriptor:desc];
+    if (!replacement)
+      throw std::bad_alloc();
+    [map release];
+    map = replacement;
+  }
+  auto lightCamera = BuildShadowCamera(shadowSettings_, lightDirection_);
+  lightViewProjection_ =
+      simd_mul(lightCamera.getProjectionMatrix(), lightCamera.getModelViewMatrix());
+  const auto view = camera->getModelViewMatrix();
+  [self prepareInstances:view];
+  auto pass                        = [MTLRenderPassDescriptor renderPassDescriptor];
+  pass.depthAttachment.texture     = map;
+  pass.depthAttachment.loadAction  = MTLLoadActionClear;
+  pass.depthAttachment.storeAction = MTLStoreActionStore;
+  pass.depthAttachment.clearDepth  = 1;
+  auto encoder                     = [commands renderCommandEncoderWithDescriptor:pass];
+  if (!encoder)
+    return;
+  encoder.label = @"Alloy3D directional shadow";
+  [encoder setDepthBias:0 slopeScale:shadowSettings_.slopeScale clamp:.01f];
+  [encoder setDepthStencilState:modelDepth_[0]];
+  [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
+  [encoder setCullMode:MTLCullModeNone];
+  Uniforms uniform{};
+  if (nbPlanes_)
+  {
+    uniform.perspectiveTransform = lightViewProjection_;
+    uniform.worldTransform       = matrix_identity_float4x4;
+    [encoder setRenderPipelineState:shadowPipelines_[0]];
+    [encoder setVertexBytes:&uniform length:sizeof(uniform) atIndex:1];
+    [encoder setVertexBuffer:verticesPlane_[pageIndex_].buffer() offset:0 atIndex:0];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:nbPlanes_];
+    ++shadowDrawCalls_;
+  }
+  uniform.perspectiveTransform = simd_mul(lightViewProjection_, simd_inverse(view));
+  for (const auto &draw : drawModelList_)
+  {
+    bool instanced = draw.instanceCount != 0;
+    if (!instanced && draw.color.w < 1)
+      continue;
+    uniform.worldTransform =
+        instanced ? view
+                  : simd_mul(view, BuildModelMatrix(draw.position, draw.rotation, draw.scale));
+    uniform.modelColor = instanced ? simd_make_float4(1, 1, 1, 1) : draw.color;
+    [encoder setRenderPipelineState:shadowPipelines_[instanced ? 2 : 1]];
+    [encoder setVertexBytes:&uniform length:sizeof(uniform) atIndex:1];
+    if (instanced)
+      [encoder setVertexBuffer:instanceBuffers_[pageIndex_].buffer()
+                        offset:draw.instanceOffset * sizeof(ModelInstanceUniforms)
+                       atIndex:BufferIndexInstances];
+    for (ModelPart *part in draw.model.parts)
+    {
+      if (part.alphaMode == 2)
+        continue;
+      MaterialUniforms material{
+          {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)}};
+      [encoder setFragmentBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
+      [encoder setVertexBuffer:[part vertexBufferForPage:pageIndex_] offset:0 atIndex:0];
+      [encoder setVertexBuffer:[part jointMatrixBufferForPage:pageIndex_]
+                        offset:0
+                       atIndex:BufferIndexJointMatrices];
+      [encoder setFragmentTexture:part.texture ? part.texture : whiteTexture_
+                          atIndex:TextureIndexColor];
+      [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                          indexCount:part.indexCount
+                           indexType:MTLIndexTypeUInt32
+                         indexBuffer:part.indexBuffer
+                   indexBufferOffset:0
+                       instanceCount:instanced ? draw.instanceCount : 1];
+      ++shadowDrawCalls_;
+    }
+  }
+  [encoder endEncoding];
+  shadowReady_ = true;
 }
 
 //
@@ -815,6 +1027,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     uniform->lightColorAndDiffuse =
         simd_make_float4(lightColor_.x, lightColor_.y, lightColor_.z, diffuseIntensity_);
     uniform->modelColor = simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
+    uniform->shadowTransform = shadowReady_ ? simd_mul(lightViewProjection_, simd_inverse(mdlview))
+                                            : matrix_identity_float4x4;
+    uniform->shadowParameters =
+        simd_make_float4(shadowReady_ ? 1 : 0, shadowSettings_.depthBias, 0, 0);
+    [renderEncoder setFragmentTexture:shadowReady_ ? shadowMaps_[pageIndex_] : shadowFallback_
+                              atIndex:TextureIndexShadow];
     [renderEncoder setDepthStencilState:modelDepth_[0]];
     [renderEncoder setCullMode:MTLCullModeNone];
     [renderEncoder setFrontFacingWinding:MTLWindingCounterClockwise];
@@ -847,16 +1065,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     if (!drawModelList_.empty())
     {
       [renderEncoder setCullMode:MTLCullModeNone];
-      auto instances = instanceBuffers_[pageIndex_].append(device_, 0, modelInstances_.size());
-      for (NSUInteger i = 0; i < modelInstances_.size(); ++i)
-      {
-        const auto &source = modelInstances_[i];
-        auto       &target = instances[i];
-        target.modelView =
-            simd_mul(mdlview, BuildModelMatrix(source.position, source.rotation, source.scale));
-        target.normalTransform = alloy3d::metal::NormalMatrix(target.modelView);
-        target.color           = source.color;
-      }
+      [self prepareInstances:mdlview];
 
       auto drawPart = [&](const DrawModel3D &dmodel, ModelPart *part, bool blend)
       {
@@ -987,12 +1196,19 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
   [renderEncoder popDebugGroup];
 
+  shadowReady_       = false;
+  instancesPrepared_ = false;
   pageIndex_ = (pageIndex_ + 1) % 3;
 }
 
 // No GPU submission: keep the current page available for the next update.
 - (void)discardFrame
 {
+  // A depth prepass is GPU work even if the color encoder could not be created.
+  if (shadowReady_)
+    pageIndex_ = (pageIndex_ + 1) % 3;
+  shadowReady_       = false;
+  instancesPrepared_ = false;
   nbPrimitives_ = 0;
   nbPlanes_ = 0;
   drawTextList_.clear();
@@ -1003,6 +1219,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 // Called after the host acquires a free frame slot, before adding any draws.
 - (void)beginFrame
 {
+  shadowDrawCalls_ = 0;
+  if (!shadowSettings_.enabled)
+  {
+    [shadowMaps_[pageIndex_] release];
+    shadowMaps_[pageIndex_] = nil;
+  }
   if (releasePending_[pageIndex_] && nbPrimitives_ == 0 && nbPlanes_ == 0)
   {
     vertices_[pageIndex_].releaseUnused();
@@ -1036,7 +1258,14 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     stats.vertexBufferBytes += vertices_[page].bytes() + verticesPlane_[page].bytes() + textVertices_[page].bytes();
     stats.instanceBufferBytes += instanceBuffers_[page].bytes();
     stats.releasePending |= releasePending_[page];
+    if (shadowMaps_[page])
+    {
+      stats.shadowMapBytes += shadowMaps_[page].width * shadowMaps_[page].height * sizeof(float);
+      stats.releasePending |=
+          !shadowSettings_.enabled || shadowMaps_[page].width != shadowSettings_.resolution;
+    }
   }
+  stats.shadowMapBytes += shadowFallback_ ? sizeof(float) : 0;
   stats.textBitmapCacheBytes = [fontRender_ cacheBytes];
   stats.textTextureCacheBytes = [textTextureCache_ bytes];
   stats.textCacheEntries = [fontRender_ cacheCount] + [textTextureCache_ count];
