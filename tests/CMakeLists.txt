@@ -36,3 +36,14 @@ add_test(NAME memory_regression COMMAND alloy3d_memory_regression
   ${CMAKE_BINARY_DIR}/shaders/shaders.metallib)
 set_tests_properties(memory_regression PROPERTIES
   ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
+
+add_executable(alloy3d_instance_regression instance_regression.mm)
+target_include_directories(alloy3d_instance_regression PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_instance_regression PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_instance_regression shaders)
+add_test(NAME instance_regression COMMAND alloy3d_instance_regression
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib
+  ${CMAKE_SOURCE_DIR}/assets/tests/rendering
+  ${CMAKE_SOURCE_DIR}/assets/tests/animation/rig_25.glb)
+set_tests_properties(instance_regression PROPERTIES
+  ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)

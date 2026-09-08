@@ -9,12 +9,13 @@
 
 #import <Foundation/Foundation.h>
 #import <MetalKit/MetalKit.h>
-#include <arm_neon.h>
 #include <algorithm>
+#include <arm_neon.h>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -93,6 +94,15 @@ struct AnimationClipData
   float                             duration = 0.0f;
   std::vector<AnimationSamplerData> samplers;
   std::vector<AnimationChannelData> channels;
+};
+
+// Immutable after loading, shared by independently animated model instances.
+struct ModelAssetData
+{
+  std::vector<NodeData>          nodes;
+  std::vector<PoseData>          bindPose;
+  std::vector<SkinData>          skins;
+  std::vector<AnimationClipData> animations;
 };
 
 simd_float3 TransformPoint(const simd_float4x4 &m, simd_float3 p)
@@ -484,12 +494,14 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   std::vector<simd_float4x4> jointMatrices_;
   int                       nodeIndex_;
   int                       skinIndex_;
+  BOOL                       opaque_;
 }
 
 @synthesize indexBuffer  = indexBuffer_;
 @synthesize texture      = texture_;
 @synthesize indexCount   = indexCount_;
 @synthesize baseColor    = baseColor_;
+@synthesize opaque       = opaque_;
 
 - (nullable id<MTLBuffer>)vertexBuffer
 {
@@ -536,6 +548,10 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     baseColor_      = baseColor;
     nodeIndex_      = nodeIndex;
     skinIndex_      = skinIndex;
+    opaque_         = texture == nil && baseColor.w >= 1.0f &&
+                      std::all_of(vertices.begin(),
+                                  vertices.end(),
+                                  [](const SourceVertex &v) { return v.color.w >= 1.0f; });
 
     std::vector<GpuModelVertex> gpuVertices(vertices.size());
     for (size_t i = 0; i < vertices.size(); i++)
@@ -565,6 +581,28 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     }
   }
   return self;
+}
+
+- (ModelPart *)newInstance
+{
+  auto part = [[ModelPart alloc] initWithVertexBuffer:vertexBuffer_
+                                          indexBuffer:indexBuffer_
+                                              texture:texture_
+                                           indexCount:indexCount_
+                                            baseColor:baseColor_];
+  try
+  {
+    part->nodeIndex_     = nodeIndex_;
+    part->skinIndex_     = skinIndex_;
+    part->opaque_        = opaque_;
+    part->jointMatrices_ = jointMatrices_;
+    return part;
+  }
+  catch (...)
+  {
+    [part release];
+    throw;
+  }
 }
 
 - (void)dealloc
@@ -646,14 +684,12 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 {
   BOOL                           loaded_;
   NSArray<ModelPart *>          *parts_;
-  std::vector<NodeData>          nodes_;
-  std::vector<PoseData>          bindPose_;
+  std::shared_ptr<const ModelAssetData> asset_;
   std::vector<PoseData>          poseScratch_[2];
   std::vector<simd_float4x4>     localMatrices_;
   std::vector<bool>              visited_;
   std::vector<simd_float4x4>     currentWorldMatrices_;
-  std::vector<SkinData>          skins_;
-  std::vector<AnimationClipData> animations_;
+
   NSUInteger                     animationIndex_;
   float                          currentTime_;
 }
@@ -666,6 +702,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   self = [super init];
   if (self != nil)
   {
+    auto asset      = std::make_shared<ModelAssetData>();
+    asset_          = asset;
     loaded_         = NO;
     animationIndex_ = 0;
     currentTime_    = 0.0f;
@@ -695,14 +733,15 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
     if (result == cgltf_result_success)
     {
-      nodes_      = BuildNodes(data, bindPose_);
+      asset->nodes = BuildNodes(data, asset->bindPose);
       // Allocate both blend poses and matrix workspace once at model load.
-      for (auto &pose : poseScratch_) pose.resize(nodes_.size());
-      localMatrices_.resize(nodes_.size());
-      currentWorldMatrices_.resize(nodes_.size());
-      visited_.resize(nodes_.size());
-      skins_      = BuildSkins(data);
-      animations_ = BuildAnimations(data);
+      for (auto &pose : poseScratch_)
+        pose.resize(asset_->nodes.size());
+      localMatrices_.resize(asset_->nodes.size());
+      currentWorldMatrices_.resize(asset_->nodes.size());
+      visited_.resize(asset_->nodes.size());
+      asset->skins      = BuildSkins(data);
+      asset->animations = BuildAnimations(data);
 
       auto buildNode = [&](auto &&selfRef, const cgltf_node *node) -> void
       {
@@ -900,6 +939,46 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   return self;
 }
 
+- (MetalModel *)newInstance
+{
+  auto            instance = [[MetalModel alloc] init];
+  NSMutableArray *parts    = nil;
+  try
+  {
+    instance->asset_          = asset_;
+    instance->loaded_         = loaded_;
+    instance->animationIndex_ = animationIndex_;
+    instance->currentTime_    = currentTime_;
+    // Preserve blended poses exactly, not just the selected clip and time.
+    instance->currentWorldMatrices_ = currentWorldMatrices_;
+    instance->localMatrices_        = localMatrices_;
+    instance->visited_              = visited_;
+    for (int i = 0; i < 2; ++i)
+      instance->poseScratch_[i] = asset_->bindPose;
+    parts = [[NSMutableArray alloc] initWithCapacity:parts_.count];
+    for (ModelPart *part in parts_)
+    {
+      auto copy = [part newInstance];
+      [parts addObject:copy];
+      [copy release];
+    }
+    instance->parts_ = [parts copy];
+    [parts release];
+    return instance;
+  }
+  catch (...)
+  {
+    [parts release];
+    [instance release];
+    throw;
+  }
+}
+
+- (BOOL)sharesAssetWith:(MetalModel *)other
+{
+  return other != nil && asset_ == other->asset_;
+}
+
 - (void)dealloc
 {
   [parts_ release];
@@ -908,21 +987,21 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 - (NSUInteger)animationCount
 {
-  return animations_.size();
+  return asset_->animations.size();
 }
 
 - (nonnull NSString *)animationNameAtIndex:(NSUInteger)index
 {
-  if (index >= animations_.size())
+  if (index >= asset_->animations.size())
   {
     return @"";
   }
-  return [NSString stringWithUTF8String:animations_[index].name.c_str()];
+  return [NSString stringWithUTF8String:asset_->animations[index].name.c_str()];
 }
 
 - (float)animationDurationAtIndex:(NSUInteger)index
 {
-  return index < animations_.size() ? animations_[index].duration : 0.0f;
+  return index < asset_->animations.size() ? asset_->animations[index].duration : 0.0f;
 }
 
 - (NSUInteger)currentAnimationIndex
@@ -932,12 +1011,13 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 - (float)currentAnimationDuration
 {
-  return animationIndex_ < animations_.size() ? animations_[animationIndex_].duration : 0.0f;
+  return animationIndex_ < asset_->animations.size() ? asset_->animations[animationIndex_].duration
+                                                     : 0.0f;
 }
 
 - (void)setAnimationIndex:(NSUInteger)index
 {
-  if (index < animations_.size())
+  if (index < asset_->animations.size())
   {
     animationIndex_ = index;
     [self updatePoseAtTime:currentTime_];
@@ -947,9 +1027,9 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 - (BOOL)setAnimationName:(nonnull NSString *)name
 {
   auto targetName = std::string([name UTF8String]);
-  for (size_t i = 0; i < animations_.size(); i++)
+  for (size_t i = 0; i < asset_->animations.size(); i++)
   {
-    if (animations_[i].name == targetName)
+    if (asset_->animations[i].name == targetName)
     {
       [self setAnimationIndex:i];
       return YES;
@@ -970,11 +1050,11 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
                         timeB:(float)timeBSeconds
                        weight:(float)weight
 {
-  if (nodes_.empty())
+  if (asset_->nodes.empty())
   {
     return;
   }
-  if (animationA >= animations_.size() || animationB >= animations_.size())
+  if (animationA >= asset_->animations.size() || animationB >= asset_->animations.size())
   {
     return;
   }
@@ -1025,24 +1105,24 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 - (NSUInteger)rigCount
 {
-  return nodes_.size();
+  return asset_->nodes.size();
 }
 
 - (nonnull NSString *)rigNameAtIndex:(NSUInteger)index
 {
-  if (index >= nodes_.size())
+  if (index >= asset_->nodes.size())
   {
     return @"";
   }
-  return [NSString stringWithUTF8String:nodes_[index].name.c_str()];
+  return [NSString stringWithUTF8String:asset_->nodes[index].name.c_str()];
 }
 
 - (NSInteger)rigIndexForName:(nonnull NSString *)name
 {
   auto targetName = std::string([name UTF8String]);
-  for (size_t i = 0; i < nodes_.size(); i++)
+  for (size_t i = 0; i < asset_->nodes.size(); i++)
   {
-    if (nodes_[i].name == targetName)
+    if (asset_->nodes[i].name == targetName)
     {
       return static_cast<NSInteger>(i);
     }
@@ -1065,12 +1145,12 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
                                 world:(std::vector<simd_float4x4> &)worldMatrices
                               visited:(std::vector<bool> &)visited
 {
-  if (index < 0 || index >= nodes_.size() || visited[index])
+  if (index < 0 || index >= asset_->nodes.size() || visited[index])
   {
     return;
   }
 
-  auto parent = nodes_[index].parent;
+  auto parent = asset_->nodes[index].parent;
   if (parent != NoIndex)
   {
     [self computeWorldMatricesFromLocal:localMatrices index:parent world:worldMatrices visited:visited];
@@ -1086,10 +1166,10 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 - (void)samplePoseForAnimation:(NSUInteger)index time:(float)seconds into:(std::vector<PoseData> &)pose
 {
   // Reset every component: channels omitted by a new clip must use the bind pose.
-  pose = bindPose_;
-  if (index < animations_.size())
+  pose = asset_->bindPose;
+  if (index < asset_->animations.size())
   {
-    const auto &clip = animations_[index];
+    const auto &clip = asset_->animations[index];
     auto        time = clip.duration > 0.0f ? std::fmod(std::max(0.0f, seconds), clip.duration) : seconds;
     for (const auto &channel : clip.channels)
     {
@@ -1153,13 +1233,13 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
   for (ModelPart *part in parts_)
   {
-    [part updateWithNodeWorldMatrices:worldMatrices skins:skins_];
+    [part updateWithNodeWorldMatrices:worldMatrices skins:asset_->skins];
   }
 }
 
 - (void)updatePoseAtTime:(float)seconds
 {
-  if (nodes_.empty())
+  if (asset_->nodes.empty())
   {
     return;
   }

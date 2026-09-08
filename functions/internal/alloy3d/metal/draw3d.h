@@ -1,11 +1,13 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#include <alloy3d/render_memory.h>
+#import <MetalKit/MetalKit.h>
 #import <alloy3d/camera.h>
 #import <alloy3d/metal/model.h>
-#import <MetalKit/MetalKit.h>
+#include <alloy3d/model_instance.h>
+#include <alloy3d/render_memory.h>
 #include <simd/vector_types.h>
+#include <span>
 
 typedef NS_ENUM(NSInteger, DrawText3DAlign) {
   DrawText3DAlignLeftBottom = 0,
@@ -89,6 +91,10 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
 - (void)setLightDirection:(simd_float3)direction ambient:(float)ambient diffuse:(float)diffuse;
 
 - (void)discardFrame;
+- (void)drawModelInstances:(nonnull MetalModel *)model
+                 instances:(std::span<const alloy3d::ModelInstance>)instances;
+// Number of model draw calls encoded by the most recent render, for diagnostics.
+- (NSUInteger)modelDrawCallCount;
 - (void)beginFrame;
 - (void)setTextBitmapLimit:(NSUInteger)bitmapBytes textureLimit:(NSUInteger)textureBytes;
 - (void)releaseUnusedMemory;

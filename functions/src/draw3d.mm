@@ -1,23 +1,24 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import <alloy3d/metal/draw3d.h>
-#import <alloy3d/camera.h>
 #include "dsemaphore.h"
-#import <alloy3d/metal/memory_cache.h>
-#include <alloy3d/metal/vertex_buffer.h>
-#import <alloy3d/metal/font_render.h>
 #include "shader_def.h"
-#import <alloy3d/metal/texture.h>
 #import <Metal/Metal.h>
-#include <arm_neon.h>
 #include <algorithm>
+#import <alloy3d/camera.h>
+#import <alloy3d/metal/draw3d.h>
+#import <alloy3d/metal/font_render.h>
+#import <alloy3d/metal/memory_cache.h>
+#include <alloy3d/metal/normal_matrix.h>
+#import <alloy3d/metal/texture.h>
+#include <alloy3d/metal/vertex_buffer.h>
+#include <arm_neon.h>
 #include <cmath>
 #include <list>
 #include <memory>
-#include <vector>
-#include <utility>
 #include <simd/simd.h>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -40,14 +41,24 @@ struct DrawModel3D
   simd_float3 rotation;
   simd_float3 scale;
   simd_float4 color;
+  NSUInteger        instanceOffset = 0;
+  NSUInteger        instanceCount  = 0;
 
   DrawModel3D(MetalModel *m, simd_float3 p, simd_float3 r, simd_float3 s, simd_float4 c)
       : model([m retain]), position(p), rotation(r), scale(s), color(c) {}
+  DrawModel3D(MetalModel *m, NSUInteger offset, NSUInteger count)
+      : model([m retain]), position{}, rotation{}, scale{}, color{}, instanceOffset(offset),
+        instanceCount(count)
+  {
+  }
   DrawModel3D(const DrawModel3D &) = delete;
   DrawModel3D &operator=(const DrawModel3D &) = delete;
   DrawModel3D(DrawModel3D &&other) noexcept
       : model(std::exchange(other.model, nil)), position(other.position), rotation(other.rotation),
-        scale(other.scale), color(other.color) {}
+        scale(other.scale), color(other.color), instanceOffset(other.instanceOffset),
+        instanceCount(other.instanceCount)
+  {
+  }
   ~DrawModel3D() { [model release]; }
 };
 
@@ -108,6 +119,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   id<MTLRenderPipelineState> pipelineState_;
   id<MTLRenderPipelineState> pipelineStateText_;
   id<MTLRenderPipelineState> pipelineStateModel_;
+  id<MTLRenderPipelineState>                          pipelineStateModelInstances_;
   id<MTLBuffer>              uniformBuffer_[3];
   alloy3d::metal::VertexBuffer<VertexDataPrim3D> vertices_[3];
   alloy3d::metal::VertexBuffer<VertexDataPrim3D> verticesPlane_[3];
@@ -124,6 +136,9 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   bool releasePending_[3];
   std::list<DrawText3DPtr>   drawTextList_;
   std::vector<DrawModel3D>   drawModelList_;
+  std::vector<alloy3d::ModelInstance>                 modelInstances_;
+  alloy3d::metal::VertexBuffer<ModelInstanceUniforms> instanceBuffers_[3];
+  NSUInteger                                          modelDrawCalls_;
 
   SimpleLock primLock_;
   SimpleLock planeLock_;
@@ -181,6 +196,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   pipelineStateModel_ = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
   [vertexFunction release];
   [fragmentFunction release];
+  vertexFunction               = [library newFunctionWithName:@"modelInstanceVert3d"];
+  pipelineDesc.label           = @"PipelineModelInstances3D";
+  pipelineDesc.vertexFunction  = vertexFunction;
+  pipelineStateModelInstances_ = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc
+                                                                         error:&error];
+  [vertexFunction release];
 
   [pipelineDesc release];
 }
@@ -251,6 +272,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   [pipelineState_ release];
   [pipelineStateText_ release];
   [pipelineStateModel_ release];
+  [pipelineStateModelInstances_ release];
   [whiteTexture_ release];
   [super dealloc];
 }
@@ -702,11 +724,57 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   drawModelList_.emplace_back(model, position, rotation, scale, color);
 }
 
+- (void)drawModelInstances:(MetalModel *)model
+                 instances:(std::span<const alloy3d::ModelInstance>)instances
+{
+  if (model == nil || !model.loaded || instances.empty())
+    return;
+  const NSUInteger limit = device_.maxBufferLength / sizeof(ModelInstanceUniforms);
+  if (instances.size() > limit || modelInstances_.size() > limit - instances.size())
+    throw std::length_error("Alloy3D instances exceed device capacity");
+
+  // Multi-part batches change instance-major order to part-major order. Preserve
+  // the original order if any part/placement may blend. Single-part order is unchanged.
+  bool batch = model.parts.count == 1;
+  if (!batch)
+  {
+    batch = std::all_of(
+        instances.begin(), instances.end(), [](const auto &i) { return i.color.w >= 1.0f; });
+    for (ModelPart *part in model.parts)
+      batch &= part.opaque;
+  }
+  SimpleGuard guard(modelLock_);
+  if (!batch)
+  {
+    drawModelList_.reserve(drawModelList_.size() + instances.size());
+    for (const auto &i : instances)
+      drawModelList_.emplace_back(model, i.position, i.rotation, i.scale, i.color);
+    return;
+  }
+  const auto offset = modelInstances_.size();
+  modelInstances_.insert(modelInstances_.end(), instances.begin(), instances.end());
+  try
+  {
+    drawModelList_.emplace_back(model, offset, instances.size());
+  }
+  catch (...)
+  {
+    modelInstances_.resize(offset);
+    throw;
+  }
+}
+
+- (NSUInteger)modelDrawCallCount
+{
+  return modelDrawCalls_;
+}
+
 //
 - (void)render:(nullable id<MTLRenderCommandEncoder>)renderEncoder
         camera:(nonnull alloy3d::CameraData *)camera;
 {
   [renderEncoder pushDebugGroup:@"Draw3D"];
+  modelDrawCalls_ = 0;
 
   if (nbPrimitives_ > 0 || nbPlanes_ > 0 || !drawModelList_.empty() || !drawTextList_.empty())
   {
@@ -716,10 +784,10 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     auto mdlview                  = camera->getModelViewMatrix();
     uniform->perspectiveTransform = camera->getProjectionMatrix();
     uniform->worldTransform       = mdlview;
-    uniform->worldNormalTransform =
-        simd_matrix(mdlview.columns[0].xyz, mdlview.columns[1].xyz, mdlview.columns[2].xyz);
-    uniform->lightDirectionAndAmbient = simd_make_float4(
-        lightDirection_.x, lightDirection_.y, lightDirection_.z, ambientIntensity_);
+    uniform->worldNormalTransform = alloy3d::metal::NormalMatrix(mdlview);
+    // Public light direction is in world coordinates; normals are in view coordinates.
+    auto viewLight = simd_mul(mdlview, simd_make_float4(lightDirection_, 0.0f)).xyz;
+    uniform->lightDirectionAndAmbient = simd_make_float4(viewLight, ambientIntensity_);
     uniform->lightColorAndDiffuse =
         simd_make_float4(lightColor_.x, lightColor_.y, lightColor_.z, diffuseIntensity_);
     uniform->modelColor = simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -752,18 +820,55 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     if (!drawModelList_.empty())
     {
       [renderEncoder setCullMode:MTLCullModeNone];
-      [renderEncoder setRenderPipelineState:pipelineStateModel_];
+      auto instances = instanceBuffers_[pageIndex_].append(device_, 0, modelInstances_.size());
+      for (NSUInteger i = 0; i < modelInstances_.size(); ++i)
+      {
+        const auto &source = modelInstances_[i];
+        auto       &target = instances[i];
+        target.modelView =
+            simd_mul(mdlview, BuildModelMatrix(source.position, source.rotation, source.scale));
+        target.normalTransform = alloy3d::metal::NormalMatrix(target.modelView);
+        target.color           = source.color;
+      }
 
       for (const auto &dmodel : drawModelList_)
       {
+        if (dmodel.instanceCount != 0)
+        {
+          [renderEncoder setRenderPipelineState:pipelineStateModelInstances_];
+          [renderEncoder setVertexBuffer:uniformBuff offset:0 atIndex:1];
+          [renderEncoder setFragmentBuffer:uniformBuff offset:0 atIndex:1];
+          [renderEncoder setVertexBuffer:instanceBuffers_[pageIndex_].buffer()
+                                  offset:dmodel.instanceOffset * sizeof(ModelInstanceUniforms)
+                                 atIndex:BufferIndexInstances];
+          for (ModelPart *part in dmodel.model.parts)
+          {
+            [renderEncoder setVertexBuffer:[part vertexBufferForPage:pageIndex_]
+                                    offset:0
+                                   atIndex:0];
+            [renderEncoder setVertexBuffer:[part jointMatrixBufferForPage:pageIndex_]
+                                    offset:0
+                                   atIndex:BufferIndexJointMatrices];
+            [renderEncoder setFragmentTexture:part.texture != nil ? part.texture : whiteTexture_
+                                      atIndex:TextureIndexColor];
+            [renderEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                                      indexCount:part.indexCount
+                                       indexType:MTLIndexTypeUInt32
+                                     indexBuffer:part.indexBuffer
+                               indexBufferOffset:0
+                                   instanceCount:dmodel.instanceCount];
+            ++modelDrawCalls_;
+          }
+          continue;
+        }
+        [renderEncoder setRenderPipelineState:pipelineStateModel_];
         auto modelMatrix = BuildModelMatrix(dmodel.position, dmodel.rotation, dmodel.scale);
         auto modelView   = simd_mul(mdlview, modelMatrix);
 
         Uniforms modelUniform{};
         modelUniform.perspectiveTransform = camera->getProjectionMatrix();
         modelUniform.worldTransform       = modelView;
-        modelUniform.worldNormalTransform =
-            simd_matrix(modelView.columns[0].xyz, modelView.columns[1].xyz, modelView.columns[2].xyz);
+        modelUniform.worldNormalTransform     = alloy3d::metal::NormalMatrix(modelView);
         modelUniform.lightDirectionAndAmbient = uniform->lightDirectionAndAmbient;
         modelUniform.lightColorAndDiffuse     = uniform->lightColorAndDiffuse;
         modelUniform.modelColor               = dmodel.color;
@@ -784,9 +889,11 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                                      indexType:MTLIndexTypeUInt32
                                    indexBuffer:part.indexBuffer
                              indexBufferOffset:0];
+          ++modelDrawCalls_;
         }
       }
       drawModelList_.clear();
+      modelInstances_.clear();
     }
 
     if (!drawTextList_.empty())
@@ -850,6 +957,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   nbPlanes_ = 0;
   drawTextList_.clear();
   drawModelList_.clear();
+  modelInstances_.clear();
 }
 
 // Called after the host acquires a free frame slot, before adding any draws.
@@ -860,6 +968,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     vertices_[pageIndex_].releaseUnused();
     verticesPlane_[pageIndex_].releaseUnused();
     textVertices_[pageIndex_].releaseUnused();
+    instanceBuffers_[pageIndex_].releaseUnused();
     releasePending_[pageIndex_] = false;
   }
 }
@@ -883,6 +992,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   for (NSUInteger page = 0; page < 3; ++page)
   {
     stats.vertexBufferBytes += vertices_[page].bytes() + verticesPlane_[page].bytes() + textVertices_[page].bytes();
+    stats.instanceBufferBytes += instanceBuffers_[page].bytes();
     stats.releasePending |= releasePending_[page];
   }
   stats.textBitmapCacheBytes = [fontRender_ cacheBytes];

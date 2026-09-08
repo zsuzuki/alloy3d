@@ -12,6 +12,7 @@ struct v2f
     float3 normal;
     half4 color;
     float2 texcoord;
+    float4 modelColor [[flat]];
 };
 
 //
@@ -21,62 +22,98 @@ vertex v2f simpleVert3d(device const VertexData3D* vertexData [[buffer(0)]],
                        device const Uniforms& cameraData [[buffer(1)]],
                        uint vertexId [[vertex_id]])
 {
-    v2f o;
+  v2f o{};
 
-    const device VertexData3D& vd = vertexData[ vertexId ];
+  const device VertexData3D &vd = vertexData[vertexId];
 
-    float4 pos = float4( vd.position, 1.0 );
-    o.position = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
-    o.normal   = cameraData.worldNormalTransform * vd.normal;
-    o.texcoord = vd.texcoord.xy;
-    o.color    = vd.color;
+  float4 pos = float4(vd.position, 1.0);
+  o.position = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
+  o.normal   = cameraData.worldNormalTransform * vd.normal;
+  o.texcoord = vd.texcoord.xy;
+  o.color    = vd.color;
 
-    return o;
+  return o;
 }
 
-vertex v2f modelVert3d(device const VertexDataModel3D* vertexData [[buffer(0)]],
-                       device const Uniforms& cameraData [[buffer(1)]],
-                       device const float4x4* jointMatrices [[buffer(3)]],
-                       uint vertexId [[vertex_id]])
+// Inverse transpose of the actual blended deformation, including node scale.
+float3 TransformModelNormal(float4x4 matrix, float3 normal)
 {
-    v2f o;
+  float3 a = matrix[0].xyz, b = matrix[1].xyz, c = matrix[2].xyz;
+  float  scale =
+      max(max(max(abs(a.x), abs(a.y)), abs(a.z)),
+          max(max(max(abs(b.x), abs(b.y)), abs(b.z)), max(max(abs(c.x), abs(c.y)), abs(c.z))));
+  if (!(scale > 0.0) || !isfinite(scale))
+    return float3(0.0);
+  a /= scale;
+  b /= scale;
+  c /= scale;
+  float3 x = cross(b, c), y = cross(c, a), z = cross(a, b);
+  float  det = dot(a, x);
+  if (abs(det) < 1e-8)
+    return float3(0.0);
+  return float3x3(x / det, y / det, z / det) * normal;
+}
 
-    const device VertexDataModel3D& vd = vertexData[vertexId];
-    float4 weights = vd.weights;
-    float weightSum = weights.x + weights.y + weights.z + weights.w;
+void SkinVertex(const device VertexDataModel3D &vd, const device float4x4 *jointMatrices,
+                thread float4 &position, thread float3 &normal)
+{
+  float4   weights = vd.weights;
+  float    sum     = weights.x + weights.y + weights.z + weights.w;
+  float4x4 transform;
+  if (sum > 0.000001)
+  {
+    weights /= sum;
+    transform = jointMatrices[vd.joints.x] * weights.x + jointMatrices[vd.joints.y] * weights.y +
+                jointMatrices[vd.joints.z] * weights.z + jointMatrices[vd.joints.w] * weights.w;
+  }
+  else
+    transform = jointMatrices[0];
+  position = transform * float4(vd.position, 1.0);
+  normal   = TransformModelNormal(transform, vd.normal);
+}
 
-    float4 localPosition = float4(vd.position, 1.0);
-    float3 localNormal = vd.normal;
-    float4 skinnedPosition = localPosition;
-    float3 skinnedNormal = localNormal;
+float3 UnitModelNormal(float3 normal)
+{
+  float magnitude = length(normal);
+  return magnitude > 0.0 && isfinite(magnitude) ? normal / magnitude : float3(0.0);
+}
 
-    if (weightSum > 0.000001)
-    {
-        weights /= weightSum;
-        float4 p0 = jointMatrices[vd.joints.x] * localPosition;
-        float4 p1 = jointMatrices[vd.joints.y] * localPosition;
-        float4 p2 = jointMatrices[vd.joints.z] * localPosition;
-        float4 p3 = jointMatrices[vd.joints.w] * localPosition;
-        skinnedPosition = p0 * weights.x + p1 * weights.y + p2 * weights.z + p3 * weights.w;
+vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
+                       device const Uniforms          &cameraData [[buffer(1)]],
+                       device const float4x4          *jointMatrices [[buffer(3)]],
+                       uint                            vertexId [[vertex_id]])
+{
+  v2f                             o{};
+  const device VertexDataModel3D &vd = vertexData[vertexId];
+  float4                          position;
+  float3                          normal;
+  SkinVertex(vd, jointMatrices, position, normal);
+  o.position   = cameraData.perspectiveTransform * cameraData.worldTransform * position;
+  o.normal     = UnitModelNormal(cameraData.worldNormalTransform * normal);
+  o.texcoord   = vd.texcoord;
+  o.color      = vd.color;
+  o.modelColor = cameraData.modelColor;
+  return o;
+}
 
-        float3 n0 = (jointMatrices[vd.joints.x] * float4(localNormal, 0.0)).xyz;
-        float3 n1 = (jointMatrices[vd.joints.y] * float4(localNormal, 0.0)).xyz;
-        float3 n2 = (jointMatrices[vd.joints.z] * float4(localNormal, 0.0)).xyz;
-        float3 n3 = (jointMatrices[vd.joints.w] * float4(localNormal, 0.0)).xyz;
-        skinnedNormal = n0 * weights.x + n1 * weights.y + n2 * weights.z + n3 * weights.w;
-    }
-    else
-    {
-        skinnedPosition = jointMatrices[0] * localPosition;
-        skinnedNormal = (jointMatrices[0] * float4(localNormal, 0.0)).xyz;
-    }
-
-    o.position = cameraData.perspectiveTransform * cameraData.worldTransform * skinnedPosition;
-    o.normal   = cameraData.worldNormalTransform * skinnedNormal;
-    o.texcoord = vd.texcoord.xy;
-    o.color    = vd.color;
-
-    return o;
+vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[buffer(0)]],
+                               device const Uniforms              &cameraData [[buffer(1)]],
+                               device const float4x4              *jointMatrices [[buffer(3)]],
+                               device const ModelInstanceUniforms *instances [[buffer(4)]],
+                               uint vertexId [[vertex_id]], uint instanceId [[instance_id]])
+{
+  v2f                                 o{};
+  const device VertexDataModel3D     &vd       = vertexData[vertexId];
+  const device ModelInstanceUniforms &instance = instances[instanceId];
+  float4                              position;
+  float3                              normal;
+  SkinVertex(vd, jointMatrices, position, normal);
+  o.position   = cameraData.perspectiveTransform * instance.modelView * position;
+  o.normal     = UnitModelNormal(instance.normalTransform * normal);
+  o.texcoord   = vd.texcoord;
+  o.color      = vd.color;
+  o.modelColor = instance.color;
+  return o;
 }
 
 fragment half4 simpleFrag3d( v2f in [[stage_in]], texture2d< half, access::sample > tex [[texture(0)]] )
@@ -102,7 +139,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]],
 {
     constexpr sampler s(address::repeat, filter::linear);
     half4 texel = tex.sample(s, in.texcoord).rgba;
-    half4 baseColor = in.color * half4(cameraData.modelColor) * texel;
+    half4             baseColor = in.color * half4(in.modelColor) * texel;
 
     float normalLength = length(in.normal);
     if (normalLength < 0.001)
@@ -124,17 +161,17 @@ vertex v2f textVert3d(device const VertexData3D* vertexData [[buffer(0)]],
                       device const Uniforms& cameraData [[buffer(1)]],
                       uint vertexId [[vertex_id]])
 {
-    v2f o;
+  v2f o{};
 
-    const device VertexData3D& vd = vertexData[ vertexId ];
+  const device VertexData3D &vd = vertexData[vertexId];
 
-    float4 pos = float4( vd.position, 1.0 );
-    o.position = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
-    o.normal   = float3( 0.0, 0.0, 0.0 );
-    o.texcoord = vd.texcoord.xy;
-    o.color    = vd.color;
+  float4 pos = float4(vd.position, 1.0);
+  o.position = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
+  o.normal   = float3(0.0, 0.0, 0.0);
+  o.texcoord = vd.texcoord.xy;
+  o.color    = vd.color;
 
-    return o;
+  return o;
 }
 
 fragment half4 textFrag3d(v2f in [[stage_in]], texture2d<half, access::sample> tex [[texture(0)]])

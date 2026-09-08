@@ -63,6 +63,9 @@ class MainLoop : public alloy3d::ApplicationLoop
   bool              onKeyA_ = false;
   bool              onKeyS_ = false;
   bool              onKeyD_ = false;
+  bool                       onKeyI_        = false;
+  bool                       instanceDemo_  = false;
+  bool                       releaseMemory_ = false;
   std::array<bool, 4> cameraKeys_{}; // left, right, up, down
 
   double windowWidth_  = WindowWidth;
@@ -73,6 +76,8 @@ class MainLoop : public alloy3d::ApplicationLoop
   alloy3d::ApplicationContext::ModelPtr animatedModel_;
   std::array<alloy3d::ApplicationContext::ModelPtr, 3> testModels_;
   float testAnimationTime_ = 0.0f;
+  std::array<alloy3d::ApplicationContext::ModelPtr, 3> sharedModels_;
+  std::array<alloy3d::ModelInstance, 81>               placements_;
 
   simd_float3 modelPosition_ = simd_make_float3(3.0f, 0.0f, 5.0f);
   float       modelYaw_      = 0.0f;
@@ -133,6 +138,8 @@ public:
     cubeJump_.reset();
     animatedModel_.reset();
     for (auto &model : testModels_) model.reset();
+    for (auto &model : sharedModels_)
+      model.reset();
     std::cout << std::format("To Close Window\n");
   }
 
@@ -169,6 +176,15 @@ public:
     for (std::size_t i = 0; i < testModels_.size(); ++i)
       testModels_[i] = ctx.LoadModel(std::format("models/rig_{}.glb", jointCounts[i]));
 
+    for (auto &model : sharedModels_)
+      model = ctx.CreateModelInstance(testModels_[0]);
+    for (std::size_t i = 0; i < placements_.size(); ++i)
+    {
+      auto &instance    = placements_[i];
+      instance.position = {float(i % 9) * 1.4f - 5.6f, .35f, float(i / 9) * 1.2f - 5.0f};
+      instance.scale    = {.45f, .65f, .45f};
+      instance.color    = {.5f + .05f * float(i % 9), .85f, 1, 1};
+    }
     ctx.SetTextFontSize(28.0f);
     lastFrameTime_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
   }
@@ -194,12 +210,24 @@ public:
     UpdateCamera(ctx, pad, deltaTime);
 
     ctx.SetLight3D(simd_make_float3(-0.35f, -0.8f, -0.45f), 0.35f, 0.85f);
+    if (releaseMemory_)
+    {
+      ctx.ReleaseUnusedMemory();
+      releaseMemory_ = false;
+    }
     DrawGrid(ctx);
-    DrawModels(ctx);
-    DrawTestModels(ctx, deltaTime);
-    DrawCubeJumpLabel(ctx);
-    DrawAnimationLabel(ctx);
-    ctx.Print("WASD: move bouncer   |   Arrows / right stick: orbit   |   R: reset view", 20.0f, 20.0f);
+    if (instanceDemo_)
+      DrawInstanceDemo(ctx, deltaTime);
+    else
+    {
+      DrawModels(ctx);
+      DrawTestModels(ctx, deltaTime);
+      DrawCubeJumpLabel(ctx);
+      DrawAnimationLabel(ctx);
+    }
+    ctx.Print("WASD: move   |   Arrows / right stick: orbit   |   R: reset   |   I: instance demo",
+              20.0f,
+              20.0f);
   }
 
 private:
@@ -233,6 +261,14 @@ private:
             break;
           case alloy3d::keyboard::KeyCode::DOWN:
             cameraKeys_[3] = press;
+            break;
+          case alloy3d::keyboard::KeyCode::I:
+            if (press && !onKeyI_)
+            {
+              instanceDemo_  = !instanceDemo_;
+              releaseMemory_ = true;
+            }
+            onKeyI_ = press;
             break;
           case alloy3d::keyboard::KeyCode::R:
             if (press) { cameraYaw_ = 0.15f; cameraPitch_ = 0.32f; }
@@ -525,6 +561,31 @@ private:
                    0.3f,
                    labelColor,
                    alloy3d::TextAlign3D::CenterBottom);
+  }
+
+  void DrawInstanceDemo(alloy3d::ApplicationContext &ctx, float deltaTime)
+  {
+    testAnimationTime_ = std::fmod(testAnimationTime_ + deltaTime, 12.0f);
+    const auto &model  = testModels_[0];
+    if (model && model->IsLoaded())
+    {
+      if (model->CurrentAnimationIndex() != 0)
+        model->SetAnimation(0);
+      model->SetAnimationTime(testAnimationTime_);
+      ctx.DrawModelInstances3D(model, placements_);
+    }
+    for (std::size_t i = 0; i < sharedModels_.size(); ++i)
+    {
+      const auto &copy = sharedModels_[i];
+      if (!copy || !copy->IsLoaded())
+        continue;
+      copy->SetAnimationBlend(
+          0, testAnimationTime_ * (1 + .2f * i), 1, testAnimationTime_ + .7f * i, float(i) * .5f);
+      ctx.DrawModel3D(copy, {float(i) * 3 - 3, .5f, 6}, {0, 0, 0}, {.8f, .8f, .8f});
+    }
+    ctx.Print("81 instances: shared pose   |   Front row: 3 shared models, independent animation",
+              20,
+              58);
   }
 
   void DrawTestModels(alloy3d::ApplicationContext &ctx, float deltaTime)

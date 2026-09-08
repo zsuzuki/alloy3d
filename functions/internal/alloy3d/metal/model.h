@@ -11,6 +11,7 @@
 @property(readonly) _Nullable id<MTLTexture> texture;
 @property(readonly) NSUInteger indexCount;
 @property(readonly) simd_float4 baseColor;
+@property(readonly) BOOL                     opaque;
 
 - (nonnull instancetype)initWithVertexBuffer:(nonnull id<MTLBuffer>)vertexBuffer
                                  indexBuffer:(nonnull id<MTLBuffer>)indexBuffer
@@ -28,6 +29,9 @@
 @property(readonly) NSArray<ModelPart *> *_Nonnull parts;
 
 - (nonnull instancetype)initWithFile:(nonnull NSString *)fname device:(nonnull id<MTLDevice>)device;
+- (nonnull MetalModel *)newInstance;
+// Diagnostic identity for immutable node/skin/clip data (not a public API).
+- (BOOL)sharesAssetWith:(nonnull MetalModel *)other;
 - (NSUInteger)animationCount;
 - (nonnull NSString *)animationNameAtIndex:(NSUInteger)index;
 - (float)animationDurationAtIndex:(NSUInteger)index;

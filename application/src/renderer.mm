@@ -198,6 +198,7 @@ public:
     auto stats = [draw2d_ memoryStats];
     const auto other = [draw3d_ memoryStats];
     stats.vertexBufferBytes += other.vertexBufferBytes;
+    stats.instanceBufferBytes += other.instanceBufferBytes;
     stats.textBitmapCacheBytes += other.textBitmapCacheBytes;
     stats.textTextureCacheBytes += other.textTextureCacheBytes;
     stats.textCacheEntries += other.textCacheEntries;
@@ -357,6 +358,31 @@ public:
     auto fnstr = [NSString stringWithUTF8String:fname.c_str()];
     auto model = [[MetalModel alloc] initWithFile:fnstr device:device_];
     return std::make_shared<ModelImpl>(model);
+  }
+
+  ModelPtr CreateModelInstance(ModelPtr source) override
+  {
+    auto model = std::dynamic_pointer_cast<ModelImpl>(source);
+    if (!model || !model->IsLoaded())
+      return {};
+    auto instance = [model->GetModel() newInstance];
+    try
+    {
+      return std::make_shared<ModelImpl>(instance);
+    }
+    catch (...)
+    {
+      [instance release];
+      throw;
+    }
+  }
+
+  void DrawModelInstances3D(ModelPtr                                model,
+                            std::span<const alloy3d::ModelInstance> instances) override
+  {
+    auto impl = std::dynamic_pointer_cast<ModelImpl>(model);
+    if (impl && impl->IsLoaded())
+      [draw3d_ drawModelInstances:impl->GetModel() instances:instances];
   }
 
   void DrawModel3D(ModelPtr model,

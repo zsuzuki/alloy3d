@@ -4,10 +4,12 @@
 #pragma once
 
 #include <alloy3d/model.h>
+#include <alloy3d/model_instance.h>
 #include <alloy3d/render_memory.h>
 #include <alloy3d/sprite.h>
 #include <memory>
 #include <simd/vector_types.h>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -70,6 +72,7 @@ public:
   // 3D
   virtual CameraData &GetCamera() = 0;
 
+  // Direction the light travels, in world coordinates.
   virtual void SetLight3D(simd_float3 direction, float ambient, float diffuse) = 0;
   virtual void DrawLine3D(simd_float3 from, simd_float3 to, simd_float4 color) = 0;
   virtual void DrawTriangle3D(simd_float3 p0, simd_float3 p1, simd_float3 p2,
@@ -102,6 +105,16 @@ public:
                           TextAlign3D align = TextAlign3D::LeftBottom)            = 0;
   using ModelPtr                                  = std::shared_ptr<Model>;
   virtual ModelPtr LoadModel(std::string fname)   = 0;
+  // Share immutable resources, copy the current pose, then animate independently.
+  // The bundled host implements this; unsupported custom contexts return null.
+  virtual ModelPtr CreateModelInstance(ModelPtr source) { return {}; }
+  // Copies placements at submission; all use the model's pose at render time.
+  // Custom contexts retain correct behavior through this individual-draw fallback.
+  virtual void DrawModelInstances3D(ModelPtr model, std::span<const ModelInstance> instances)
+  {
+    for (const auto &instance : instances)
+      DrawModel3D(model, instance.position, instance.rotation, instance.scale, instance.color);
+  }
   virtual void     DrawModel3D(ModelPtr model,
                                simd_float3 position,
                                simd_float3 rotation,

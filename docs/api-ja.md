@@ -86,7 +86,12 @@ int main()
 - `DrawCone3D(center, radius, height, color, segments)`
 - `DrawText3D(msg, position, lineHeight, color, align)`
 - `LoadModel(fname)`
+- `CreateModelInstance(source)`: 形状・テクスチャ・定義を共有し、現在の姿勢から独立したモデルを作成します。
 - `DrawModel3D(model, position, rotation, scale, color)`
+- `DrawModelInstances3D(model, instances)`: 同じ姿勢のモデルを配置配列でまとめて描画します。
+
+使い分けと制約は[インスタンス描画とモデル資源の共有](model-instances-ja.md)を参照してください。
+`SetLight3D` の方向はワールド座標で光が進む向きです。
 
 描画メモリの管理:
 

@@ -67,6 +67,7 @@ CPU画像とGPUテクスチャは別々の予算を持つ。それぞれを2D用
 | フィールド | 内容 |
 | --- | --- |
 | `vertexBufferBytes` | 一時頂点バッファの全3ページの確保容量。使用頂点数ではない |
+| `instanceBufferBytes` | インスタンス描画の変換・色バッファの全3ページの確保容量 |
 | `textBitmapCacheBytes` | キャッシュに残るCPU画像のバイト数 |
 | `textTextureCacheBytes` | キャッシュに残るGPUテクスチャの割当バイト数 |
 | `textCacheEntries` | CPU画像・GPUテクスチャの項目数の合計。同じ文字も別々に数える |

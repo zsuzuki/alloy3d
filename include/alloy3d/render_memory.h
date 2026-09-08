@@ -15,6 +15,7 @@ struct RenderMemoryStats
 {
   // Library-owned capacity across all three frame pages, not process RSS.
   std::size_t vertexBufferBytes     = 0;
+  std::size_t instanceBufferBytes   = 0;
   std::size_t textBitmapCacheBytes  = 0;
   std::size_t textTextureCacheBytes = 0;
   std::size_t textCacheEntries      = 0;

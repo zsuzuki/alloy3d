@@ -28,6 +28,7 @@ foreach(FILE ${src})
   add_custom_command(OUTPUT ${OUTFILE}
                      COMMAND "${XCRUN_EXECUTABLE}" -sdk macosx metal -fmodules-cache-path=${METAL_MODULE_CACHE_DIR} -o ${OUTFILE} -c ${INFILE}
                      MAIN_DEPENDENCY ${INFILE}
+                     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shader_def.h
                      COMMENT "metal shader ${FILE}"
                      VERBATIM)
   list(APPEND shaderfiles ${OUTFILE})
