@@ -109,6 +109,7 @@ public:
   // The bundled host implements this; unsupported custom contexts return null.
   virtual ModelPtr CreateModelInstance(ModelPtr source) { return {}; }
   // Copies placements at submission; all use the model's pose at render time.
+  // BLEND materials or faded placements use sorted individual draws in the bundled host.
   // Custom contexts retain correct behavior through this individual-draw fallback.
   virtual void DrawModelInstances3D(ModelPtr model, std::span<const ModelInstance> instances)
   {

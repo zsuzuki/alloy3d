@@ -470,6 +470,9 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 @interface ModelPart ()
 
 - (BOOL)getBounds:(alloy3d::Bounds3D *)bounds;
+- (void)configureMaterial:(const cgltf_material *)material
+                 vertices:(const std::vector<SourceVertex> &)vertices
+               jointCount:(NSUInteger)jointCount;
 
 - (nonnull instancetype)initWithSourceVertices:(const std::vector<SourceVertex> &)vertices
                                        indices:(const std::vector<uint32_t> &)indices
@@ -496,14 +499,22 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   std::vector<simd_float4x4> jointMatrices_;
   int                       nodeIndex_;
   int                       skinIndex_;
-  BOOL                       opaque_;
+  NSUInteger                                            alphaMode_;
+  float                                                 alphaCutoff_;
+  BOOL                                                  doubleSided_, unlit_;
+  std::shared_ptr<const std::vector<alloy3d::Bounds3D>> influenceBounds_;
+  simd_float3                                           sortCenter_;
+  bool                                                  sortCenterDirty_;
 }
 
 @synthesize indexBuffer  = indexBuffer_;
 @synthesize texture      = texture_;
 @synthesize indexCount   = indexCount_;
 @synthesize baseColor    = baseColor_;
-@synthesize opaque       = opaque_;
+@synthesize alphaMode    = alphaMode_;
+@synthesize alphaCutoff  = alphaCutoff_;
+@synthesize doubleSided  = doubleSided_;
+@synthesize unlit        = unlit_;
 
 - (nullable id<MTLBuffer>)vertexBuffer
 {
@@ -550,10 +561,6 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     baseColor_      = baseColor;
     nodeIndex_      = nodeIndex;
     skinIndex_      = skinIndex;
-    opaque_         = texture == nil && baseColor.w >= 1.0f &&
-                      std::all_of(vertices.begin(),
-                                  vertices.end(),
-                                  [](const SourceVertex &v) { return v.color.w >= 1.0f; });
 
     std::vector<GpuModelVertex> gpuVertices(vertices.size());
     for (size_t i = 0; i < vertices.size(); i++)
@@ -583,6 +590,48 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     }
   }
   return self;
+}
+
+// Bounds per influencing joint provide a conservative skinned bound without
+// scanning vertices each frame. Immutable bounds are shared by model instances.
+- (void)configureMaterial:(const cgltf_material *)material
+                 vertices:(const std::vector<SourceVertex> &)vertices
+               jointCount:(NSUInteger)jointCount
+{
+  alphaMode_   = material ? material->alpha_mode : cgltf_alpha_mode_opaque;
+  alphaCutoff_ = material ? material->alpha_cutoff : .5f;
+  doubleSided_ = material && material->double_sided;
+  unlit_       = material && material->unlit;
+  auto bounds =
+      std::make_shared<std::vector<alloy3d::Bounds3D>>(std::max<NSUInteger>(1, jointCount));
+  for (const auto &vertex : vertices)
+  {
+    float sum = vertex.weights[0] + vertex.weights[1] + vertex.weights[2] + vertex.weights[3];
+    if (!vertex.skinned || sum <= .000001f)
+      (*bounds)[0].include(vertex.position);
+    else
+      for (int i = 0; i < 4; ++i)
+        if (vertex.weights[i] > 0 && vertex.joints[i] < bounds->size())
+          (*bounds)[vertex.joints[i]].include(vertex.position);
+  }
+  influenceBounds_ = bounds;
+  sortCenterDirty_ = true;
+}
+
+- (simd_float3)sortCenter
+{
+  if (sortCenterDirty_)
+  {
+    alloy3d::Bounds3D bounds;
+    if (influenceBounds_)
+      for (size_t i = 0; i < std::min(influenceBounds_->size(), jointMatrices_.size()); ++i)
+        if ((*influenceBounds_)[i].isValid())
+          bounds.include((*influenceBounds_)[i].transformed(jointMatrices_[i]));
+    sortCenter_ =
+        bounds.isValid() ? bounds.min * .5f + bounds.max * .5f : simd_make_float3(0, 0, 0);
+    sortCenterDirty_ = false;
+  }
+  return sortCenter_;
 }
 
 // Shared vertex/index buffers are immutable after loading. Querying the current
@@ -645,7 +694,13 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   {
     part->nodeIndex_     = nodeIndex_;
     part->skinIndex_     = skinIndex_;
-    part->opaque_        = opaque_;
+    part->alphaMode_       = alphaMode_;
+    part->alphaCutoff_     = alphaCutoff_;
+    part->doubleSided_     = doubleSided_;
+    part->unlit_           = unlit_;
+    part->influenceBounds_ = influenceBounds_;
+    part->sortCenter_      = sortCenter_;
+    part->sortCenterDirty_ = sortCenterDirty_;
     part->jointMatrices_ = jointMatrices_;
     return part;
   }
@@ -700,6 +755,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
                                skins:(const std::vector<SkinData> &)skins
 {
   std::fill(std::begin(jointMatricesDirty_), std::end(jointMatricesDirty_), true);
+  sortCenterDirty_          = true;
   auto nodeWorld = nodeIndex_ >= 0 && nodeIndex_ < nodeWorldMatrices.size()
                        ? nodeWorldMatrices[nodeIndex_]
                        : matrix_identity_float4x4;
@@ -942,6 +998,9 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
                                                            nodeIndex:nodeIndex
                                                            skinIndex:skinIndex
                                                               device:device];
+            [part configureMaterial:primitive.material
+                           vertices:vertices
+                         jointCount:skinIndex == NoIndex ? 1 : data->skins[skinIndex].joints_count];
             [parts addObject:part];
             [part release];
             [texture release];

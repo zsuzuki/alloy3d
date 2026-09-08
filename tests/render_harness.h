@@ -98,10 +98,12 @@ struct Harness
     }
     [draw beginFrame];
   }
-  void Encode(int slot, alloy3d::CameraData &camera)
+  void Encode(int slot, alloy3d::CameraData &camera,
+              const std::function<void(id<MTLRenderCommandEncoder>)> &after = {})
   {
     auto pass                            = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture     = colors[slot];
+    pass.colorAttachments[0].clearColor  = MTLClearColorMake(0, 0, 0, 0);
     pass.colorAttachments[0].loadAction  = MTLLoadActionClear;
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
     pass.depthAttachment.texture         = depth;
@@ -113,6 +115,8 @@ struct Harness
     auto encoder                         = [commands[slot] renderCommandEncoderWithDescriptor:pass];
     [encoder setDepthStencilState:depthState];
     [draw render:encoder camera:&camera];
+    if (after)
+      after(encoder);
     [encoder endEncoding];
   }
   Pixels Read(int slot)

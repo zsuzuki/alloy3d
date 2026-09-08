@@ -159,6 +159,17 @@ if(ALLOY3D_BUILD_VIEWER)
     )
   endforeach()
 
+  foreach(MATERIAL_FIXTURE opaque_alpha mask_checker blend_red blend_blue single_sided double_sided unlit)
+    set_property(TARGET alloy3d_viewer APPEND PROPERTY LINK_DEPENDS
+      ${CMAKE_CURRENT_SOURCE_DIR}/assets/tests/materials/${MATERIAL_FIXTURE}.glb)
+    add_custom_command(TARGET alloy3d_viewer POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/tests/materials/${MATERIAL_FIXTURE}.glb
+        $<TARGET_FILE_DIR:alloy3d_viewer>/../Resources/models/${MATERIAL_FIXTURE}.glb
+      COMMENT "COPY: material fixture (${MATERIAL_FIXTURE})"
+    )
+  endforeach()
+
   add_dependencies(alloy3d_viewer shaders)
   add_custom_command(TARGET alloy3d_viewer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory

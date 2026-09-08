@@ -62,6 +62,14 @@ struct DrawModel3D
   ~DrawModel3D() { [model release]; }
 };
 
+struct TransparentPart
+{
+  const DrawModel3D *draw;
+  ModelPart         *part;
+  float              depth;
+  size_t             order;
+};
+
 int ClampSegments(int value, int minValue)
 {
   return value < minValue ? minValue : value;
@@ -118,8 +126,10 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
   id<MTLRenderPipelineState> pipelineState_;
   id<MTLRenderPipelineState> pipelineStateText_;
-  id<MTLRenderPipelineState> pipelineStateModel_;
+  id<MTLRenderPipelineState>                          pipelineStateModel_[2];
   id<MTLRenderPipelineState>                          pipelineStateModelInstances_;
+  id<MTLDepthStencilState>                            modelDepth_[2];
+  std::vector<TransparentPart>                        transparentParts_;
   id<MTLBuffer>              uniformBuffer_[3];
   alloy3d::metal::VertexBuffer<VertexDataPrim3D> vertices_[3];
   alloy3d::metal::VertexBuffer<VertexDataPrim3D> verticesPlane_[3];
@@ -193,7 +203,21 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   pipelineDesc.vertexFunction   = vertexFunction;
   pipelineDesc.fragmentFunction = fragmentFunction;
 
-  pipelineStateModel_ = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
+  // OPAQUE/MASK do not blend. BLEND uses straight alpha with no depth writes.
+  for (int blend = 0; blend < 2; ++blend)
+  {
+    colorAttachment.blendingEnabled             = blend;
+    colorAttachment.sourceAlphaBlendFactor      = MTLBlendFactorOne;
+    colorAttachment.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+    pipelineStateModel_[blend] = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc
+                                                                         error:&error];
+    auto depth                 = [[MTLDepthStencilDescriptor alloc] init];
+    depth.depthCompareFunction = MTLCompareFunctionLess;
+    depth.depthWriteEnabled    = !blend;
+    modelDepth_[blend]         = [device_ newDepthStencilStateWithDescriptor:depth];
+    [depth release];
+  }
+  colorAttachment.blendingEnabled = NO;
   [vertexFunction release];
   [fragmentFunction release];
   vertexFunction               = [library newFunctionWithName:@"modelInstanceVert3d"];
@@ -271,7 +295,11 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   [textTextureCache_ release];
   [pipelineState_ release];
   [pipelineStateText_ release];
-  [pipelineStateModel_ release];
+  for (int blend = 0; blend < 2; ++blend)
+  {
+    [pipelineStateModel_[blend] release];
+    [modelDepth_[blend] release];
+  }
   [pipelineStateModelInstances_ release];
   [whiteTexture_ release];
   [super dealloc];
@@ -733,16 +761,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   if (instances.size() > limit || modelInstances_.size() > limit - instances.size())
     throw std::length_error("Alloy3D instances exceed device capacity");
 
-  // Multi-part batches change instance-major order to part-major order. Preserve
-  // the original order if any part/placement may blend. Single-part order is unchanged.
-  bool batch = model.parts.count == 1;
-  if (!batch)
-  {
-    batch = std::all_of(
-        instances.begin(), instances.end(), [](const auto &i) { return i.color.w >= 1.0f; });
-    for (ModelPart *part in model.parts)
-      batch &= part.opaque;
-  }
+  // Blended parts must be sorted together with other models/parts. Only batches
+  // with depth-writing parts and fully opaque placement colors can remain instanced.
+  bool batch = std::all_of(
+      instances.begin(), instances.end(), [](const auto &i) { return i.color.w >= 1.0f; });
+  for (ModelPart *part in model.parts)
+    batch &= part.alphaMode != 2;
   SimpleGuard guard(modelLock_);
   if (!batch)
   {
@@ -791,6 +815,9 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     uniform->lightColorAndDiffuse =
         simd_make_float4(lightColor_.x, lightColor_.y, lightColor_.z, diffuseIntensity_);
     uniform->modelColor = simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
+    [renderEncoder setDepthStencilState:modelDepth_[0]];
+    [renderEncoder setCullMode:MTLCullModeNone];
+    [renderEncoder setFrontFacingWinding:MTLWindingCounterClockwise];
     // primitive draw
     if (nbPrimitives_ > 0 || nbPlanes_ > 0)
     {
@@ -831,71 +858,84 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
         target.color           = source.color;
       }
 
-      for (const auto &dmodel : drawModelList_)
+      auto drawPart = [&](const DrawModel3D &dmodel, ModelPart *part, bool blend)
       {
-        if (dmodel.instanceCount != 0)
+        const bool instanced = dmodel.instanceCount != 0;
+        [renderEncoder setRenderPipelineState:instanced ? pipelineStateModelInstances_
+                                                        : pipelineStateModel_[blend]];
+        [renderEncoder setDepthStencilState:modelDepth_[blend]];
+        MaterialUniforms material{
+            {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)}};
+        [renderEncoder setFragmentBytes:&material
+                                 length:sizeof(material)
+                                atIndex:BufferIndexMaterial];
+        if (instanced)
         {
-          [renderEncoder setRenderPipelineState:pipelineStateModelInstances_];
           [renderEncoder setVertexBuffer:uniformBuff offset:0 atIndex:1];
           [renderEncoder setFragmentBuffer:uniformBuff offset:0 atIndex:1];
           [renderEncoder setVertexBuffer:instanceBuffers_[pageIndex_].buffer()
                                   offset:dmodel.instanceOffset * sizeof(ModelInstanceUniforms)
                                  atIndex:BufferIndexInstances];
-          for (ModelPart *part in dmodel.model.parts)
-          {
-            [renderEncoder setVertexBuffer:[part vertexBufferForPage:pageIndex_]
-                                    offset:0
-                                   atIndex:0];
-            [renderEncoder setVertexBuffer:[part jointMatrixBufferForPage:pageIndex_]
-                                    offset:0
-                                   atIndex:BufferIndexJointMatrices];
-            [renderEncoder setFragmentTexture:part.texture != nil ? part.texture : whiteTexture_
-                                      atIndex:TextureIndexColor];
-            [renderEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                                      indexCount:part.indexCount
-                                       indexType:MTLIndexTypeUInt32
-                                     indexBuffer:part.indexBuffer
-                               indexBufferOffset:0
-                                   instanceCount:dmodel.instanceCount];
-            ++modelDrawCalls_;
-          }
-          continue;
         }
-        [renderEncoder setRenderPipelineState:pipelineStateModel_];
-        auto modelMatrix = BuildModelMatrix(dmodel.position, dmodel.rotation, dmodel.scale);
-        auto modelView   = simd_mul(mdlview, modelMatrix);
-
-        Uniforms modelUniform{};
-        modelUniform.perspectiveTransform = camera->getProjectionMatrix();
-        modelUniform.worldTransform       = modelView;
-        modelUniform.worldNormalTransform     = alloy3d::metal::NormalMatrix(modelView);
-        modelUniform.lightDirectionAndAmbient = uniform->lightDirectionAndAmbient;
-        modelUniform.lightColorAndDiffuse     = uniform->lightColorAndDiffuse;
-        modelUniform.modelColor               = dmodel.color;
-
-        [renderEncoder setVertexBytes:&modelUniform length:sizeof(modelUniform) atIndex:1];
-        [renderEncoder setFragmentBytes:&modelUniform length:sizeof(modelUniform) atIndex:1];
-
+        else
+        {
+          Uniforms modelUniform = *uniform;
+          modelUniform.worldTransform =
+              simd_mul(mdlview, BuildModelMatrix(dmodel.position, dmodel.rotation, dmodel.scale));
+          modelUniform.worldNormalTransform =
+              alloy3d::metal::NormalMatrix(modelUniform.worldTransform);
+          modelUniform.modelColor = dmodel.color;
+          [renderEncoder setVertexBytes:&modelUniform length:sizeof(modelUniform) atIndex:1];
+          [renderEncoder setFragmentBytes:&modelUniform length:sizeof(modelUniform) atIndex:1];
+        }
+        [renderEncoder setVertexBuffer:[part vertexBufferForPage:pageIndex_] offset:0 atIndex:0];
+        [renderEncoder setVertexBuffer:[part jointMatrixBufferForPage:pageIndex_]
+                                offset:0
+                               atIndex:BufferIndexJointMatrices];
+        [renderEncoder setFragmentTexture:part.texture != nil ? part.texture : whiteTexture_
+                                  atIndex:TextureIndexColor];
+        [renderEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                                  indexCount:part.indexCount
+                                   indexType:MTLIndexTypeUInt32
+                                 indexBuffer:part.indexBuffer
+                           indexBufferOffset:0
+                               instanceCount:instanced ? dmodel.instanceCount : 1];
+        ++modelDrawCalls_;
+      };
+      transparentParts_.clear();
+      for (const auto &dmodel : drawModelList_)
+      {
         for (ModelPart *part in dmodel.model.parts)
         {
-          [renderEncoder setVertexBuffer:[part vertexBufferForPage:pageIndex_] offset:0 atIndex:0];
-          [renderEncoder setVertexBuffer:[part jointMatrixBufferForPage:pageIndex_]
-                                  offset:0
-                                 atIndex:BufferIndexJointMatrices];
-          [renderEncoder setFragmentTexture:part.texture != nil ? part.texture : whiteTexture_
-                                    atIndex:TextureIndexColor];
-          [renderEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                                    indexCount:part.indexCount
-                                     indexType:MTLIndexTypeUInt32
-                                   indexBuffer:part.indexBuffer
-                             indexBufferOffset:0];
-          ++modelDrawCalls_;
+          bool blend = part.alphaMode == 2 || (dmodel.instanceCount == 0 && dmodel.color.w < 1);
+          if (!blend)
+            drawPart(dmodel, part, false);
+          else
+          {
+            auto modelView =
+                simd_mul(mdlview, BuildModelMatrix(dmodel.position, dmodel.rotation, dmodel.scale));
+            auto  clip  = simd_mul(uniform->perspectiveTransform,
+                                   simd_mul(modelView, simd_make_float4(part.sortCenter, 1)));
+            float depth = clip.w != 0 ? clip.z / clip.w : 0;
+            if (!std::isfinite(depth))
+              depth = 0;
+            transparentParts_.push_back({&dmodel, part, depth, transparentParts_.size()});
+          }
         }
       }
+      // Deterministic ties retain submission order without stable_sort's temporary allocation.
+      std::sort(transparentParts_.begin(),
+                transparentParts_.end(),
+                [](const auto &a, const auto &b)
+                { return a.depth == b.depth ? a.order < b.order : a.depth > b.depth; });
+      for (const auto &part : transparentParts_)
+        drawPart(*part.draw, part.part, true);
+      transparentParts_.clear();
       drawModelList_.clear();
       modelInstances_.clear();
     }
 
+    [renderEncoder setDepthStencilState:modelDepth_[0]];
     if (!drawTextList_.empty())
     {
       if (drawTextList_.size() > device_.maxBufferLength / sizeof(VertexData3D) / 4)
@@ -981,6 +1021,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
 - (void)releaseUnusedMemory
 {
+  if (transparentParts_.empty())
+    std::vector<TransparentPart>{}.swap(transparentParts_);
   [fontRender_ clearRenderCache];
   [textTextureCache_ removeAllObjects];
   for (auto &pending : releasePending_) pending = true;

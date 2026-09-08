@@ -96,8 +96,7 @@ static void TestInstances(Harness &h, const std::filesystem::path &root)
     const auto calls = [h.draw modelDrawCallCount];
     auto       batch = h.Run(camera, [&] { [h.draw drawModelInstances:model instances:list]; });
     Check(reference == batch, "instanced pixels differ from individual draws");
-    bool transparent = std::strcmp(name, "transparent_parts.glb") == 0 ||
-                       std::strcmp(name, "textured_parts.glb") == 0;
+    bool transparent = std::strcmp(name, "transparent_parts.glb") == 0;
     Check([h.draw modelDrawCallCount] == (transparent ? calls : model.parts.count),
           "draw calls were not batched/fallback correctly");
     // Overlap placements, use alpha, mix scalar and two batch requests, then mutate input.

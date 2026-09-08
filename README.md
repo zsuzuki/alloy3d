@@ -19,6 +19,7 @@ Alloy3D was split out from the earlier `metaltest` rendering test repository.
 - [文字キャッシュ予算と描画メモリの解放](docs/render-memory-ja.md)
 - [インスタンス描画とモデル資源の共有](docs/model-instances-ja.md)
 - [カメラとモデルの全体表示](docs/camera-ja.md)
+- [基本マテリアル](docs/materials-ja.md)
 
 ## Status
 

@@ -69,6 +69,9 @@ class MainLoop : public alloy3d::ApplicationLoop
   float                      cameraDistance_ = CameraDist;
   bool                       onKeyI_        = false;
   bool                       instanceDemo_  = false;
+  bool                                                 onKeyM_ = false, materialDemo_ = false;
+  float                                                materialTime_ = 0;
+  std::array<alloy3d::ApplicationContext::ModelPtr, 7> materialModels_;
   bool                       releaseMemory_ = false;
   std::array<bool, 4> cameraKeys_{}; // left, right, up, down
 
@@ -142,6 +145,8 @@ public:
     cubeJump_.reset();
     animatedModel_.reset();
     for (auto &model : testModels_) model.reset();
+    for (auto &model : materialModels_)
+      model.reset();
     for (auto &model : sharedModels_)
       model.reset();
     std::cout << std::format("To Close Window\n");
@@ -179,6 +184,16 @@ public:
     const std::array<int, 3> jointCounts = {25, 100, 200};
     for (std::size_t i = 0; i < testModels_.size(); ++i)
       testModels_[i] = ctx.LoadModel(std::format("models/rig_{}.glb", jointCounts[i]));
+
+    const std::array<const char *, 7> materialNames = {"opaque_alpha",
+                                                       "mask_checker",
+                                                       "blend_red",
+                                                       "blend_blue",
+                                                       "single_sided",
+                                                       "double_sided",
+                                                       "unlit"};
+    for (size_t i = 0; i < materialModels_.size(); ++i)
+      materialModels_[i] = ctx.LoadModel(std::format("models/{}.glb", materialNames[i]));
 
     for (auto &model : sharedModels_)
       model = ctx.CreateModelInstance(testModels_[0]);
@@ -221,7 +236,9 @@ public:
     }
     sceneBounds_ = {};
     DrawGrid(ctx);
-    if (instanceDemo_)
+    if (materialDemo_)
+      DrawMaterialDemo(ctx, deltaTime);
+    else if (instanceDemo_)
       DrawInstanceDemo(ctx, deltaTime);
     else
     {
@@ -242,8 +259,8 @@ public:
       fitRequested_ = false;
     }
     ctx.Print(ctx.GetCamera().getProjectionMode() == alloy3d::ProjectionMode::Orthographic
-                  ? "O: Orthographic   |   F: fit models   |   I: instance demo"
-                  : "O: Perspective   |   F: fit models   |   I: instance demo",
+                  ? "O: Orthographic   |   F: fit models   |   I: instances   |   M: materials"
+                  : "O: Perspective   |   F: fit models   |   I: instances   |   M: materials",
               20,
               58);
     ctx.Print("WASD: move   |   Arrows / right stick: orbit   |   R: reset", 20.0f, 20.0f);
@@ -285,9 +302,20 @@ private:
             if (press && !onKeyI_)
             {
               instanceDemo_  = !instanceDemo_;
+              materialDemo_  = false;
               releaseMemory_ = true;
             }
             onKeyI_ = press;
+            break;
+          case alloy3d::keyboard::KeyCode::M:
+            if (press && !onKeyM_)
+            {
+              materialDemo_  = !materialDemo_;
+              instanceDemo_  = false;
+              fitRequested_  = true;
+              releaseMemory_ = true;
+            }
+            onKeyM_ = press;
             break;
           case alloy3d::keyboard::KeyCode::O:
             if (press && !onKeyO_)
@@ -651,6 +679,48 @@ private:
                    0.3f,
                    labelColor,
                    alloy3d::TextAlign3D::CenterBottom);
+  }
+
+  void DrawMaterialDemo(alloy3d::ApplicationContext &ctx, float deltaTime)
+  {
+    materialTime_ = std::fmod(materialTime_ + deltaTime, 100.f);
+    auto draw =
+        [&](size_t model, simd_float3 position, simd_float3 rotation = simd_make_float3(0, 0, 0))
+    {
+      if (materialModels_[model] && materialModels_[model]->IsLoaded())
+        DrawModel(ctx, materialModels_[model], position, rotation, simd_make_float3(2, 2, 2));
+    };
+    draw(0, simd_make_float3(-6, 2, 0));
+    draw(1, simd_make_float3(-3, 2, 0));
+    // Near plane is deliberately submitted first; transparent parts are sorted at render time.
+    draw(2, simd_make_float3(-.3f, 2, .4f));
+    draw(3, simd_make_float3(.3f, 2, 0));
+    draw(4, simd_make_float3(3, 2, 0), simd_make_float3(0, materialTime_, 0));
+    draw(5, simd_make_float3(6, 2, 0), simd_make_float3(0, materialTime_, 0));
+    draw(4, simd_make_float3(-2, 1, 4), simd_make_float3(0, .9f * std::sin(materialTime_), 0));
+    draw(6, simd_make_float3(2, 1, 4), simd_make_float3(0, .9f * std::sin(materialTime_), 0));
+    const std::array<const char *, 5> labels = {"OPAQUE / alpha ignored",
+                                                "MASK / cutout",
+                                                "BLEND / sorted",
+                                                "Single sided",
+                                                "Double sided"};
+    for (size_t i = 0; i < labels.size(); ++i)
+      ctx.DrawText3D(labels[i],
+                     simd_make_float3(float(i) * 3 - 6, 3.5f, 0),
+                     .25f,
+                     simd_make_float4(.6f, .9f, 1, 1),
+                     alloy3d::TextAlign3D::CenterBottom);
+    ctx.DrawText3D("Lit",
+                   simd_make_float3(-2, 2.5f, 4),
+                   .3f,
+                   simd_make_float4(1, 1, 1, 1),
+                   alloy3d::TextAlign3D::CenterBottom);
+    ctx.DrawText3D("Unlit",
+                   simd_make_float3(2, 2.5f, 4),
+                   .3f,
+                   simd_make_float4(1, 1, 1, 1),
+                   alloy3d::TextAlign3D::CenterBottom);
+    ctx.Print("Material gallery: rotating panels show back faces and lighting", 20, 96);
   }
 
   void DrawInstanceDemo(alloy3d::ApplicationContext &ctx, float deltaTime)

@@ -13,6 +13,7 @@ struct v2f
     half4 color;
     float2 texcoord;
     float4 modelColor [[flat]];
+    uint   mirrored [[flat]];
 };
 
 //
@@ -55,7 +56,7 @@ float3 TransformModelNormal(float4x4 matrix, float3 normal)
 }
 
 void SkinVertex(const device VertexDataModel3D &vd, const device float4x4 *jointMatrices,
-                thread float4 &position, thread float3 &normal)
+                thread float4 &position, thread float3 &normal, thread float &orientation)
 {
   float4   weights = vd.weights;
   float    sum     = weights.x + weights.y + weights.z + weights.w;
@@ -70,6 +71,7 @@ void SkinVertex(const device VertexDataModel3D &vd, const device float4x4 *joint
     transform = jointMatrices[0];
   position = transform * float4(vd.position, 1.0);
   normal   = TransformModelNormal(transform, vd.normal);
+  orientation = determinant(float3x3(transform[0].xyz, transform[1].xyz, transform[2].xyz));
 }
 
 float3 UnitModelNormal(float3 normal)
@@ -87,12 +89,17 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   const device VertexDataModel3D &vd = vertexData[vertexId];
   float4                          position;
   float3                          normal;
-  SkinVertex(vd, jointMatrices, position, normal);
+  float                           orientation;
+  SkinVertex(vd, jointMatrices, position, normal, orientation);
   o.position   = cameraData.perspectiveTransform * cameraData.worldTransform * position;
   o.normal     = UnitModelNormal(cameraData.worldNormalTransform * normal);
   o.texcoord   = vd.texcoord;
   o.color      = vd.color;
   o.modelColor = cameraData.modelColor;
+  o.mirrored   = orientation * determinant(float3x3(cameraData.worldTransform[0].xyz,
+                                                    cameraData.worldTransform[1].xyz,
+                                                    cameraData.worldTransform[2].xyz)) <
+                 0;
   return o;
 }
 
@@ -107,12 +114,17 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   const device ModelInstanceUniforms &instance = instances[instanceId];
   float4                              position;
   float3                              normal;
-  SkinVertex(vd, jointMatrices, position, normal);
+  float                               orientation;
+  SkinVertex(vd, jointMatrices, position, normal, orientation);
   o.position   = cameraData.perspectiveTransform * instance.modelView * position;
   o.normal     = UnitModelNormal(instance.normalTransform * normal);
   o.texcoord   = vd.texcoord;
   o.color      = vd.color;
   o.modelColor = instance.color;
+  o.mirrored   = orientation * determinant(float3x3(instance.modelView[0].xyz,
+                                                    instance.modelView[1].xyz,
+                                                    instance.modelView[2].xyz)) <
+                 0;
   return o;
 }
 
@@ -133,28 +145,34 @@ fragment half4 simpleFrag3d( v2f in [[stage_in]], texture2d< half, access::sampl
     return half4( illum, in.color.a * texel.a );
 }
 
-fragment half4 modelFrag3d(v2f in [[stage_in]],
-                           device const Uniforms& cameraData [[buffer(1)]],
+fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]],
+                           device const Uniforms          &cameraData [[buffer(1)]],
+                           constant MaterialUniforms      &material [[buffer(5)]],
                            texture2d<half, access::sample> tex [[texture(0)]])
 {
-    constexpr sampler s(address::repeat, filter::linear);
-    half4 texel = tex.sample(s, in.texcoord).rgba;
-    half4             baseColor = in.color * half4(in.modelColor) * texel;
-
-    float normalLength = length(in.normal);
-    if (normalLength < 0.001)
-    {
-        return baseColor;
-    }
-
-    float3 n = in.normal / normalLength;
-    float3 l = normalize(-cameraData.lightDirectionAndAmbient.xyz);
-    half ambient = half(saturate(cameraData.lightDirectionAndAmbient.w));
-    half diffuse = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
-    half3 lightColor = half3(cameraData.lightColorAndDiffuse.xyz);
-    half3 illum = baseColor.rgb * (ambient + diffuse * lightColor);
-
-    return half4(illum, baseColor.a);
+  // Fragment culling allows mixed mirrored placements in one instance batch.
+  const bool front = frontFacing != bool(in.mirrored);
+  if (!front && material.parameters.z == 0)
+    discard_fragment();
+  constexpr sampler s(address::repeat, filter::linear);
+  half4             baseColor = in.color * tex.sample(s, in.texcoord).rgba;
+  if (material.parameters.x == 1 && float(baseColor.a) < material.parameters.y)
+    discard_fragment();
+  if (material.parameters.x != 2)
+    baseColor.a = 1;
+  // Placement alpha is an explicit application fade, applied after glTF alpha rules.
+  baseColor *= half4(in.modelColor);
+  float normalLength = length(in.normal);
+  if (material.parameters.w != 0 || normalLength < 0.001)
+    return baseColor;
+  float3 n = in.normal / normalLength;
+  if (!front)
+    n = -n;
+  float3 l          = normalize(-cameraData.lightDirectionAndAmbient.xyz);
+  half   ambient    = half(saturate(cameraData.lightDirectionAndAmbient.w));
+  half   diffuse    = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
+  half3  lightColor = half3(cameraData.lightColorAndDiffuse.xyz);
+  return half4(baseColor.rgb * (ambient + diffuse * lightColor), baseColor.a);
 }
 
 vertex v2f textVert3d(device const VertexData3D* vertexData [[buffer(0)]],
