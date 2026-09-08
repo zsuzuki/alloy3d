@@ -63,6 +63,10 @@ class MainLoop : public alloy3d::ApplicationLoop
   bool              onKeyA_ = false;
   bool              onKeyS_ = false;
   bool              onKeyD_ = false;
+  bool onKeyO_ = false, toggleProjection_ = false, fitRequested_ = false, resetCamera_ = true;
+  alloy3d::Bounds3D          sceneBounds_;
+  simd_float3                cameraTarget_   = {0, 1.7f, 0};
+  float                      cameraDistance_ = CameraDist;
   bool                       onKeyI_        = false;
   bool                       instanceDemo_  = false;
   bool                       releaseMemory_ = false;
@@ -215,6 +219,7 @@ public:
       ctx.ReleaseUnusedMemory();
       releaseMemory_ = false;
     }
+    sceneBounds_ = {};
     DrawGrid(ctx);
     if (instanceDemo_)
       DrawInstanceDemo(ctx, deltaTime);
@@ -225,9 +230,23 @@ public:
       DrawCubeJumpLabel(ctx);
       DrawAnimationLabel(ctx);
     }
-    ctx.Print("WASD: move   |   Arrows / right stick: orbit   |   R: reset   |   I: instance demo",
-              20.0f,
-              20.0f);
+    if (fitRequested_)
+    {
+      if (sceneBounds_.isValid())
+      {
+        auto &camera = ctx.GetCamera();
+        camera.fitBounds(sceneBounds_, 1.15f);
+        cameraTarget_   = camera.getLookAt();
+        cameraDistance_ = simd_length(camera.getEyePosition() - cameraTarget_);
+      }
+      fitRequested_ = false;
+    }
+    ctx.Print(ctx.GetCamera().getProjectionMode() == alloy3d::ProjectionMode::Orthographic
+                  ? "O: Orthographic   |   F: fit models   |   I: instance demo"
+                  : "O: Perspective   |   F: fit models   |   I: instance demo",
+              20,
+              58);
+    ctx.Print("WASD: move   |   Arrows / right stick: orbit   |   R: reset", 20.0f, 20.0f);
   }
 
 private:
@@ -270,8 +289,18 @@ private:
             }
             onKeyI_ = press;
             break;
+          case alloy3d::keyboard::KeyCode::O:
+            if (press && !onKeyO_)
+              toggleProjection_ = !toggleProjection_;
+            onKeyO_ = press;
+            break;
+          case alloy3d::keyboard::KeyCode::F:
+            if (press)
+              fitRequested_ = true;
+            break;
           case alloy3d::keyboard::KeyCode::R:
-            if (press) { cameraYaw_ = 0.15f; cameraPitch_ = 0.32f; }
+            if (press)
+              resetCamera_ = true;
             break;
           default:
             break;
@@ -475,10 +504,43 @@ private:
     cameraPitch_ += (ApplyDeadZone(pad.rightY) + float(cameraKeys_[2]) - float(cameraKeys_[3])) * CameraTurn * deltaTime;
     cameraPitch_ = std::clamp(cameraPitch_, 0.1f, 0.8f);
 
-    // Orbit the whole exhibition rather than following the moving bouncer.
+    // Orbit the exhibition or the bounds selected by F.
     const auto aspect = static_cast<float>(std::max(1.0, windowWidth_) / std::max(1.0, windowHeight_));
-    const auto distance = CameraDist * std::max(1.0f, 1.6f / aspect);
-    const auto look = simd_make_float3(0.0f, 1.7f, 0.0f);
+    auto      &camera = ctx.GetCamera();
+    if (resetCamera_)
+    {
+      cameraYaw_      = .15f;
+      cameraPitch_    = .32f;
+      cameraTarget_   = {0, 1.7f, 0};
+      cameraDistance_ = CameraDist * std::max(1.f, 1.6f / aspect);
+      camera.buildPerspective(.785398163f, aspect, .1f, 100.f);
+      resetCamera_ = false;
+    }
+    camera.setAspectRatio(aspect);
+    if (toggleProjection_)
+    {
+      if (camera.getProjectionMode() == alloy3d::ProjectionMode::Orthographic)
+      {
+        // Preserve apparent size at the orbit target, including after an orthographic fit.
+        const float distance =
+            camera.getOrthographicHeight() / (2 * std::tan(camera.getFieldOfView() / 2));
+        const float shift = distance - cameraDistance_;
+        const float near  = std::max(.001f, camera.getNearPlane() + shift);
+        camera.buildPerspective(camera.getFieldOfView(),
+                                aspect,
+                                near,
+                                std::max(near + .001f, camera.getFarPlane() + shift));
+        cameraDistance_ = distance;
+      }
+      else
+        camera.buildOrthographic(2 * cameraDistance_ * std::tan(camera.getFieldOfView() / 2),
+                                 aspect,
+                                 camera.getNearPlane(),
+                                 camera.getFarPlane());
+      toggleProjection_ = false;
+    }
+    const auto distance           = cameraDistance_;
+    const auto look               = cameraTarget_;
     const auto horizontalDistance = distance * std::cos(cameraPitch_);
     const auto eye = look + simd_make_float3(
         std::sin(cameraYaw_) * horizontalDistance,
@@ -486,7 +548,6 @@ private:
         std::cos(cameraYaw_) * horizontalDistance);
     const auto up   = simd_make_float3(0.0f, 1.0f, 0.0f);
 
-    ctx.GetCamera().buildPerspective(0.785398163f, aspect, 0.1f, 100.0f);
     ctx.GetCamera().buildModelView(eye, look, up);
   }
 
@@ -509,33 +570,62 @@ private:
     }
   }
 
+  void IncludePlacement(const alloy3d::Bounds3D &bounds, simd_float3 position, simd_float3 rotation,
+                        simd_float3 scale)
+  {
+    const auto q      = simd_mul(simd_mul(simd_quaternion(rotation.x, simd_make_float3(1, 0, 0)),
+                                          simd_quaternion(rotation.y, simd_make_float3(0, 1, 0))),
+                                 simd_quaternion(rotation.z, simd_make_float3(0, 0, 1)));
+    auto       matrix = simd_matrix4x4(q);
+    for (int i = 0; i < 3; ++i)
+      matrix.columns[i] *= scale[i];
+    matrix.columns[3] = simd_make_float4(position, 1);
+    sceneBounds_.include(bounds.transformed(matrix));
+  }
+
+  void DrawModel(alloy3d::ApplicationContext                 &ctx,
+                 const alloy3d::ApplicationContext::ModelPtr &model, simd_float3 position,
+                 simd_float3 rotation, simd_float3 scale, simd_float4 color = {1, 1, 1, 1})
+  {
+    ctx.DrawModel3D(model, position, rotation, scale, color);
+    if (fitRequested_)
+    {
+      alloy3d::Bounds3D bounds;
+      if (model->GetBounds(bounds))
+        IncludePlacement(bounds, position, rotation, scale);
+    }
+  }
+
   void DrawModels(alloy3d::ApplicationContext &ctx)
   {
     if (cube_ && cube_->IsLoaded())
     {
-      ctx.DrawModel3D(cube_,
-                      simd_make_float3(-3.0f, 0.0f, 5.0f),
-                      simd_make_float3(0.0f, 0.0f, 0.0f),
-                      simd_make_float3(0.65f, 0.65f, 0.65f),
-                      simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f));
+      DrawModel(ctx,
+                cube_,
+                simd_make_float3(-3.0f, 0.0f, 5.0f),
+                simd_make_float3(0.0f, 0.0f, 0.0f),
+                simd_make_float3(0.65f, 0.65f, 0.65f),
+                simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f));
     }
 
     if (cubeJump_ && cubeJump_->IsLoaded())
     {
-      ctx.DrawModel3D(cubeJump_,
-                      simd_make_float3(0.0f, 0.0f, 5.0f),
-                      simd_make_float3(0.0f, 0.0f, 0.0f),
-                      simd_make_float3(0.65f, 0.65f, 0.65f),
-                      simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f));
+      DrawModel(ctx,
+                cubeJump_,
+                simd_make_float3(0.0f, 0.0f, 5.0f),
+                simd_make_float3(0.0f, 0.0f, 0.0f),
+                simd_make_float3(0.65f, 0.65f, 0.65f),
+                simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f));
     }
 
     if (animatedModel_ && animatedModel_->IsLoaded())
     {
-      ctx.DrawModel3D(animatedModel_,
-                      modelPosition_,
-                      simd_make_float3(0.0f, modelYaw_, 0.0f),
-                      simd_make_float3(ModelScale, ModelScale, ModelScale),
-                      simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f));
+      DrawModel(ctx,
+                animatedModel_,
+                modelPosition_,
+                simd_make_float3(0.0f, modelYaw_, 0.0f),
+                simd_make_float3(ModelScale, ModelScale, ModelScale),
+                simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f));
     }
   }
 
@@ -573,6 +663,13 @@ private:
         model->SetAnimation(0);
       model->SetAnimationTime(testAnimationTime_);
       ctx.DrawModelInstances3D(model, placements_);
+      if (fitRequested_)
+      {
+        alloy3d::Bounds3D bounds;
+        if (model->GetBounds(bounds))
+          for (const auto &placement : placements_)
+            IncludePlacement(bounds, placement.position, placement.rotation, placement.scale);
+      }
     }
     for (std::size_t i = 0; i < sharedModels_.size(); ++i)
     {
@@ -581,11 +678,11 @@ private:
         continue;
       copy->SetAnimationBlend(
           0, testAnimationTime_ * (1 + .2f * i), 1, testAnimationTime_ + .7f * i, float(i) * .5f);
-      ctx.DrawModel3D(copy, {float(i) * 3 - 3, .5f, 6}, {0, 0, 0}, {.8f, .8f, .8f});
+      DrawModel(ctx, copy, {float(i) * 3 - 3, .5f, 6}, {0, 0, 0}, {.8f, .8f, .8f});
     }
     ctx.Print("81 instances: shared pose   |   Front row: 3 shared models, independent animation",
               20,
-              58);
+              96);
   }
 
   void DrawTestModels(alloy3d::ApplicationContext &ctx, float deltaTime)
@@ -607,8 +704,11 @@ private:
           if (model->CurrentAnimationIndex() != i) model->SetAnimation(i);
           model->SetAnimationTime(testAnimationTime_);
         }
-        ctx.DrawModel3D(model, simd_make_float3(x, 2.0f, -2.0f),
-                        simd_make_float3(0, 0, 0), simd_make_float3(1, 1, 1));
+        DrawModel(ctx,
+                  model,
+                  simd_make_float3(x, 2.0f, -2.0f),
+                  simd_make_float3(0, 0, 0),
+                  simd_make_float3(1, 1, 1));
       }
       ctx.DrawText3D(model && model->IsLoaded() ? labels[i] : "Model failed to load",
                      simd_make_float3(x, 4.9f, -2.0f), 0.35f,

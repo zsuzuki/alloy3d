@@ -2,6 +2,7 @@
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
 #import <MetalKit/MetalKit.h>
+#include <alloy3d/bounds.h>
 #include <simd/vector_types.h>
 
 @interface ModelPart : NSObject
@@ -30,6 +31,7 @@
 
 - (nonnull instancetype)initWithFile:(nonnull NSString *)fname device:(nonnull id<MTLDevice>)device;
 - (nonnull MetalModel *)newInstance;
+- (BOOL)getBounds:(nonnull alloy3d::Bounds3D *)bounds;
 // Diagnostic identity for immutable node/skin/clip data (not a public API).
 - (BOOL)sharesAssetWith:(nonnull MetalModel *)other;
 - (NSUInteger)animationCount;

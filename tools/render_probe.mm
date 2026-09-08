@@ -75,7 +75,7 @@ int main(int argc, char **argv)
     pass.stencilAttachment.loadAction    = MTLLoadActionClear;
     auto                queue            = [device newCommandQueue];
     alloy3d::CameraData camera;
-    camera.buildPerspective(45, 1, 0.1, 1000);
+    camera.buildPerspective(0.785398163f, 1, 0.1, 1000);
     const simd_float4 white = {1, 1, 1, 1};
     std::printf("device=%s mode=%s\n",
                 [device.name UTF8String],

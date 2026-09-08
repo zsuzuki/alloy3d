@@ -469,6 +469,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 @interface ModelPart ()
 
+- (BOOL)getBounds:(alloy3d::Bounds3D *)bounds;
+
 - (nonnull instancetype)initWithSourceVertices:(const std::vector<SourceVertex> &)vertices
                                        indices:(const std::vector<uint32_t> &)indices
                                        texture:(nullable id<MTLTexture>)texture
@@ -581,6 +583,55 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     }
   }
   return self;
+}
+
+// Shared vertex/index buffers are immutable after loading. Querying the current
+// CPU pose needs neither a duplicate vertex array nor a GPU synchronization.
+- (BOOL)getBounds:(alloy3d::Bounds3D *)bounds
+{
+  if (!bounds || !vertexBuffer_ || !indexBuffer_ || jointMatrices_.empty())
+    return NO;
+  if (indexCount_ == 0 || indexCount_ > indexBuffer_.length / sizeof(uint32_t))
+    return NO;
+  const auto *vertices = static_cast<const GpuModelVertex *>(vertexBuffer_.contents);
+  const auto *indices  = static_cast<const uint32_t *>(indexBuffer_.contents);
+  if (!vertices || !indices)
+    return NO;
+  const auto        vertexCount = vertexBuffer_.length / sizeof(GpuModelVertex);
+  alloy3d::Bounds3D result;
+  for (NSUInteger i = 0; i < indexCount_; ++i)
+  {
+    if (indices[i] >= vertexCount)
+      return NO;
+    const auto &vertex    = vertices[indices[i]];
+    auto        weights   = vertex.weights;
+    const float sum       = weights.x + weights.y + weights.z + weights.w;
+    auto        transform = jointMatrices_[0];
+    if (sum > 0.000001f)
+    {
+      weights /= sum;
+      transform = simd_float4x4{};
+      for (int joint = 0; joint < 4; ++joint)
+      {
+        if (vertex.joints[joint] >= jointMatrices_.size())
+          return NO;
+        for (int column = 0; column < 4; ++column)
+          transform.columns[column] +=
+              jointMatrices_[vertex.joints[joint]].columns[column] * weights[joint];
+      }
+    }
+    const auto point = simd_mul(transform, simd_make_float4(vertex.position, 1));
+    if (point.w == 0)
+      return NO;
+    auto position = point.xyz / point.w;
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z))
+      return NO;
+    result.include(position);
+  }
+  if (!result.isValid())
+    return NO;
+  *bounds = result;
+  return YES;
 }
 
 - (ModelPart *)newInstance
@@ -972,6 +1023,24 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     [instance release];
     throw;
   }
+}
+
+- (BOOL)getBounds:(alloy3d::Bounds3D *)bounds
+{
+  if (!loaded_ || !bounds)
+    return NO;
+  alloy3d::Bounds3D result;
+  for (ModelPart *part in parts_)
+  {
+    alloy3d::Bounds3D partBounds;
+    if (![part getBounds:&partBounds])
+      return NO;
+    result.include(partBounds);
+  }
+  if (!result.isValid())
+    return NO;
+  *bounds = result;
+  return YES;
 }
 
 - (BOOL)sharesAssetWith:(MetalModel *)other

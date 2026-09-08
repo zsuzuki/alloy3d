@@ -91,6 +91,10 @@ public:
   ~ModelImpl() override { [model_ release]; }
 
   bool IsLoaded() const override { return model_ != nil && model_.loaded; }
+  bool GetBounds(alloy3d::Bounds3D &bounds) const override
+  {
+    return model_ != nil && [model_ getBounds:&bounds];
+  }
   std::size_t AnimationCount() const override { return model_ != nil ? [model_ animationCount] : 0; }
   std::string AnimationName(std::size_t index) const override
   {
@@ -473,6 +477,11 @@ public:
     renderSemaphore_ = dispatch_semaphore_create(MaxBuffersInFlight);
     commandQueue_    = [device_ newCommandQueue];
 
+    // Establish the host default once. Resizes subsequently update only aspect.
+    auto  size   = view.drawableSize;
+    float aspect = size.width > 0 && size.height > 0 ? size.width / size.height : 1.0f;
+    camera_.buildPerspective(0.785398163f, aspect, 0.1f, 1000.0f);
+
     // initialize
     shaderLibrary_ = [Renderer createShaderLibrary:device_ fromName:@"shaders/shaders"];
     draw2d_        = [[Draw2D alloc] initWithMetalKitView:view shaderlib:shaderLibrary_];
@@ -572,9 +581,10 @@ public:
 
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size
 {
-  float aspect       = size.height > 0 ? size.width / (float)size.height : 1.0f;
+  float aspect =
+      size.width > 0 && size.height > 0 ? size.width / (float)size.height : camera_.getAspect();
   draw2d_.screenSize = size;
-  camera_.buildPerspective(0.785398163f, aspect, 0.1f, 1000.0f);
+  camera_.setAspectRatio(aspect);
   appLoop_->ResizeWindow(size.width, size.height);
 }
 

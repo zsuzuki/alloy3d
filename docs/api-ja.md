@@ -107,17 +107,26 @@ int main()
 `CameraData` は投影行列とビュー行列を管理します。`ApplicationContext::GetCamera()`
 から参照し、必要に応じて次のメソッドで更新します。
 
-- `buildPerspective(fovy, aspect, znear, zfar)`
+- `buildPerspective(fovy, aspect, znear, zfar)`: 垂直画角はラジアン、奥行きはMetalの `[0, 1]`。
+- `buildOrthographic(height, aspect, znear, zfar)`
+- `setAspectRatio(aspect)`: 他の投影設定を保持して更新。
+- `fitBounds(worldBounds, padding = 1.1f)`: 現在の視線方向から境界全体を収めます。
 - `buildModelView(eye, look, up)`
 - `getProjectionMatrix()`
 - `getModelViewMatrix()`
 - `getEyePosition()`
 - `getLookAt()`
 - `getUpDirection()`
+- `getProjectionMode()` / `getFieldOfView()` / `getOrthographicHeight()`
+- `getNearPlane()` / `getFarPlane()` / `getAspect()`
+
+入力制約、境界の取得と配置変換は[カメラとモデルの全体表示](camera-ja.md)を参照してください。
 
 ## Model
 
 `Model` はGLBモデルの状態とアニメーションを扱うC++インターフェースです。
+
+- `GetBounds(bounds)`: 現在の姿勢を反映したモデル座標の境界を取得します。
 
 - `IsLoaded()`
 - `AnimationCount()`

@@ -3,6 +3,7 @@
 //
 #pragma once
 
+#include <alloy3d/bounds.h>
 #include <cstddef>
 #include <simd/simd.h>
 #include <simd/vector_make.h>
@@ -19,6 +20,10 @@ public:
   virtual ~Model() = default;
 
   virtual bool IsLoaded() const = 0;
+  // Model-space AABB of the current pose, before DrawModel3D placement.
+  // On-demand O(index count) CPU query; no extra vertex copy or GPU readback.
+  // False (and unchanged output) when unavailable, including custom implementations.
+  virtual bool        GetBounds(Bounds3D &bounds) const { return false; }
   virtual std::size_t AnimationCount() const = 0;
   virtual std::string AnimationName(std::size_t index) const = 0;
   virtual float AnimationDuration(std::size_t index) const = 0;
