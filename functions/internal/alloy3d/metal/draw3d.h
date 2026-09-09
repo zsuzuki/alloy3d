@@ -6,9 +6,12 @@
 #include <alloy3d/lighting.h>
 #import <alloy3d/metal/model.h>
 #include <alloy3d/model_instance.h>
+#include <alloy3d/model_shader.h>
 #include <alloy3d/render_memory.h>
 #include <simd/vector_types.h>
 #include <span>
+#include <string>
+#include <string_view>
 
 typedef NS_ENUM(NSInteger, DrawText3DAlign) {
   DrawText3DAlignLeftBottom = 0,
@@ -89,6 +92,9 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
          rotation:(simd_float3)rotation
             scale:(simd_float3)scale
             color:(simd_float4)color;
+- (alloy3d::ModelShaderPtr)createModelShader:(std::string_view)source
+                                 diagnostics:(std::string &)diagnostics;
+- (bool)setModelShader:(alloy3d::ModelShaderPtr)shader parameters:(simd_float4)parameters;
 - (void)setLightDirection:(simd_float3)direction ambient:(float)ambient diffuse:(float)diffuse;
 - (void)setDirectionalLight:(const alloy3d::DirectionalLight3D &)light;
 - (void)setDirectionalShadow:(const alloy3d::DirectionalShadow3D &)shadow;

@@ -1,0 +1,8 @@
+// Generated from the built-in shader sources; do not edit.
+#pragma once
+static constexpr char ModelShaderPrefix[] = R"ALLOY_SHADER(
+@MODEL_SHADER_PREFIX@
+)ALLOY_SHADER";
+static constexpr char ModelShaderBody[] = R"ALLOY_SHADER(
+@MODEL_SHADER_BODY@
+)ALLOY_SHADER";

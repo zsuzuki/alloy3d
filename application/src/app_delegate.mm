@@ -263,7 +263,10 @@ NSMenu *createMenu();
 - (void)applicationWillTerminate:(NSNotification *)notification
 {
   NSLog(@"terminate APP");
+  view_.paused   = YES;
+  view_.delegate = nil;
   [renderer_ release];
+  renderer_ = nil;
   [windowDelegate_ release];
   [device_ release];
 }

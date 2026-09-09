@@ -1,6 +1,7 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
+#include "model_surface.h"
 #include "shader_def.h"
 #include "shadow.h"
 
@@ -153,7 +154,12 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                            device const Uniforms          &cameraData [[buffer(1)]],
                            constant MaterialUniforms      &material [[buffer(5)]],
                            texture2d<half, access::sample> tex [[texture(0)]],
-                           depth2d<float>                  shadowMap [[texture(1)]])
+                           depth2d<float>                  shadowMap [[texture(1)]]
+#ifdef ALLOY3D_CUSTOM_SURFACE
+                           ,
+                           constant float4 &parameters [[buffer(6)]]
+#endif
+)
 {
   // Fragment culling allows mixed mirrored placements in one instance batch.
   const bool front = frontFacing != bool(in.mirrored);
@@ -168,17 +174,35 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   // Placement alpha is an explicit application fade, applied after glTF alpha rules.
   baseColor *= half4(in.modelColor);
   float normalLength = length(in.normal);
-  if (material.parameters.w != 0 || normalLength < 0.001)
+  bool  unlit        = material.parameters.w != 0 || normalLength < 0.001;
+#ifndef ALLOY3D_CUSTOM_SURFACE
+  if (unlit)
     return baseColor;
-  float3 n = in.normal / normalLength;
+#endif
+  float3 n = normalLength >= 0.001 ? in.normal / normalLength : float3(0);
   if (!front)
     n = -n;
-  float3 l          = normalize(-cameraData.lightDirectionAndAmbient.xyz);
-  half   ambient    = half(saturate(cameraData.lightDirectionAndAmbient.w));
-  half   diffuse    = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
-  diffuse *= ShadowVisibility(in.shadowPosition, cameraData.shadowParameters, shadowMap);
-  half3  lightColor = half3(cameraData.lightColorAndDiffuse.xyz);
-  return half4(baseColor.rgb * (ambient + diffuse * lightColor), baseColor.a);
+  float3 l       = normalize(-cameraData.lightDirectionAndAmbient.xyz);
+  half   ambient = half(saturate(cameraData.lightDirectionAndAmbient.w));
+  half   diffuse = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
+  half   shadow =
+      unlit ? half(1) : ShadowVisibility(in.shadowPosition, cameraData.shadowParameters, shadowMap);
+  half3 lightColor = half3(cameraData.lightColorAndDiffuse.xyz);
+  half3 litColor =
+      unlit ? baseColor.rgb : baseColor.rgb * (ambient + diffuse * shadow * lightColor);
+#ifdef ALLOY3D_CUSTOM_SURFACE
+  ModelSurface surface{float3(baseColor.rgb),
+                       float3(litColor),
+                       n,
+                       in.texcoord,
+                       float3(lightColor),
+                       float(ambient),
+                       float(diffuse),
+                       float(shadow),
+                       unlit};
+  litColor = half3(alloy3dShade(surface, parameters));
+#endif
+  return half4(litColor, baseColor.a);
 }
 
 vertex v2f textVert3d(device const VertexData3D* vertexData [[buffer(0)]],

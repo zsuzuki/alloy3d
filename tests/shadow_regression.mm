@@ -278,12 +278,25 @@ int main(int argc, char **argv)
   {
     try
     {
-      Check(argc == 3, "usage: shadow_regression shaders.metallib material-fixtures");
+      Check(argc == 3 || (argc == 4 && std::string_view(argv[3]) == "--custom-surface"),
+            "usage: shadow_regression shaders.metallib material-fixtures");
       auto device = MTLCreateSystemDefaultDevice();
       if (!device)
         return 77;
       {
         Harness h(device, argv[1]);
+        if (argc == 4)
+        {
+          std::string diagnostics;
+          auto        shader = [h.draw
+              createModelShader:
+                  "float3 alloy3dShade(ModelSurface s, float4 p) { return s.unlit ? s.baseColor : "
+                  "s.baseColor * (s.ambient + s.diffuse * s.shadow * s.lightColor); }"
+                    diagnostics:diagnostics];
+          if (!shader)
+            throw std::runtime_error(diagnostics);
+          Check([h.draw setModelShader:shader parameters:{0, 0, 0, 0}], "shader rejected");
+        }
         Test(h, argv[2]);
       }
       [device release];

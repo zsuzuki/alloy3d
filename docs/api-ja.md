@@ -106,6 +106,14 @@ GLBの透明モード・両面・Unlitは自動反映します。[基本マテ�
 既定の文字キャッシュ予算は2D・3D合計でCPU 8 MiB、GPU 16 MiBです。
 使用例と統計の範囲は[描画メモリの管理](render-memory-ja.md)を参照してください。
 
+## モデルのカスタムシェーダー
+
+- `CreateModelShader(source, diagnostics)`: Metal関数を同期コンパイルしてハンドルを返します。
+- `SetModelShader(shader, parameters = {0,0,0,0})`: 以降のモデルのRGB計算を変更します。nullで標準に戻ります。
+
+ハンドルと数値は描画予約ごとに保存します。透過・スキニング・影の形状は既存処理を使います。
+入力と制約は[モデルのカスタムシェーダー](custom-shaders-ja.md)を参照してください。
+
 ## CameraData
 
 `CameraData` は投影行列とビュー行列を管理します。`ApplicationContext::GetCamera()`

@@ -6,6 +6,7 @@
 #include <alloy3d/lighting.h>
 #include <alloy3d/model.h>
 #include <alloy3d/model_instance.h>
+#include <alloy3d/model_shader.h>
 #include <alloy3d/render_memory.h>
 #include <alloy3d/sprite.h>
 #include <memory>
@@ -72,6 +73,21 @@ public:
 
   // 3D
   virtual CameraData &GetCamera() = 0;
+
+  // Compile once (e.g. Start), then reuse. Returns null with diagnostics on failure.
+  // Source defines float3 alloy3dShade(ModelSurface s, float4 parameters).
+  virtual ModelShaderPtr CreateModelShader(std::string_view source, std::string &diagnostics)
+  {
+    diagnostics = "Model surface shaders are unsupported by this context";
+    return {};
+  }
+  // Persistent model draw state; handle and parameters are copied at submission.
+  // Null restores built-in shading. Returns false for foreign/unsupported shaders
+  // or non-finite parameters, leaving the previous state intact.
+  virtual bool SetModelShader(ModelShaderPtr shader, simd_float4 parameters = {0, 0, 0, 0})
+  {
+    return !shader;
+  }
 
   // Direction the light travels, in world coordinates.
   virtual void SetLight3D(simd_float3 direction, float ambient, float diffuse) = 0;

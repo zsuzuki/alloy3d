@@ -273,6 +273,16 @@ public:
 
   alloy3d::CameraData &GetCamera() override { return *camera_; }
 
+  alloy3d::ModelShaderPtr CreateModelShader(std::string_view source,
+                                            std::string     &diagnostics) override
+  {
+    return [draw3d_ createModelShader:source diagnostics:diagnostics];
+  }
+  bool SetModelShader(alloy3d::ModelShaderPtr shader, simd_float4 parameters) override
+  {
+    return [draw3d_ setModelShader:std::move(shader) parameters:parameters];
+  }
+
   void SetDirectionalLight3D(const alloy3d::DirectionalLight3D &light) override
   {
     [draw3d_ setDirectionalLight:light];
@@ -514,6 +524,12 @@ public:
 {
   for (NSUInteger i = 0; i < MaxBuffersInFlight; ++i)
     dispatch_semaphore_wait(renderSemaphore_, DISPATCH_TIME_FOREVER);
+  // All submitted frames are complete. Balance the shutdown waits before
+  // disposal: libdispatch rejects a semaphore below its initial count.
+  // Return permits only after acquiring all of them, so none is reused by
+  // this drain loop in place of waiting for an outstanding frame.
+  for (NSUInteger i = 0; i < MaxBuffersInFlight; ++i)
+    dispatch_semaphore_signal(renderSemaphore_);
   [depthState_ release];
   [draw2d_ release];
   [draw3d_ release];

@@ -20,12 +20,25 @@ set(SOURCES
   src/texture.mm
 )
 
+set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../shaders")
+set(MODEL_SHADER_PREFIX "")
+foreach(PART shader_def.h shadow.h model_surface.h)
+  file(READ "${SHADER_SOURCE_DIR}/${PART}" PART_SOURCE)
+  string(APPEND MODEL_SHADER_PREFIX "\n${PART_SOURCE}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SHADER_SOURCE_DIR}/${PART}")
+endforeach()
+file(READ "${SHADER_SOURCE_DIR}/simple3d.metal" MODEL_SHADER_BODY)
+string(REGEX REPLACE "#include \"[^\"]+\"" "" MODEL_SHADER_BODY "${MODEL_SHADER_BODY}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SHADER_SOURCE_DIR}/simple3d.metal")
+configure_file(src/model_shader_source.h.in generated/model_shader_source.h @ONLY)
+
 add_library(${PROJECT_NAME} ${SOURCES})
 target_include_directories(${PROJECT_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
     $<INSTALL_INTERFACE:include>
   PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
     ${CMAKE_CURRENT_SOURCE_DIR}/internal
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/cgltf
     ${CMAKE_CURRENT_SOURCE_DIR}/../shaders

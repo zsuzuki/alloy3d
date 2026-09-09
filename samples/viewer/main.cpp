@@ -57,6 +57,8 @@ float ClampLength(float &x, float &y)
 //
 class MainLoop : public alloy3d::ApplicationLoop
 {
+  alloy3d::ModelShaderPtr    toonShader_;
+  bool                       toonEnabled_ = false, onKeyC_ = false;
   bool                       shadowEnabled_ = true, shadowChanged_ = true, onKeyH_ = false;
   alloy3d::gamepad::PadState padState_{};
   alloy3d::gamepad::PadState padStateUpdate_{};
@@ -211,6 +213,19 @@ public:
     light.ambient   = .25f;
     light.diffuse   = .75f;
     ctx.SetDirectionalLight3D(light);
+    std::string shaderError;
+    toonShader_ = ctx.CreateModelShader(R"metal(
+float3 alloy3dShade(ModelSurface s, float4 p)
+{
+  if (s.unlit) return s.baseColor;
+  float bands = max(p.x, 1.0);
+  float diffuse = floor(s.diffuse * bands + 0.5) / bands;
+  return s.baseColor * (s.ambient + diffuse * s.shadow * s.lightColor);
+}
+)metal",
+                                        shaderError);
+    if (!toonShader_)
+      std::cerr << "Toon shader unavailable: " << shaderError << '\n';
     ctx.SetTextFontSize(28.0f);
     lastFrameTime_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
   }
@@ -255,6 +270,7 @@ public:
                     simd_make_float3(-10, -.02f, 10),
                     simd_make_float4(.18f, .20f, .23f, 1));
     DrawGrid(ctx);
+    ctx.SetModelShader(toonEnabled_ ? toonShader_ : nullptr, simd_make_float4(3, 0, 0, 0));
     if (materialDemo_)
       DrawMaterialDemo(ctx, deltaTime);
     else if (instanceDemo_)
@@ -266,6 +282,7 @@ public:
       DrawCubeJumpLabel(ctx);
       DrawAnimationLabel(ctx);
     }
+    ctx.SetModelShader(nullptr);
     if (fitRequested_)
     {
       if (sceneBounds_.isValid())
@@ -282,6 +299,10 @@ public:
                   : "O: Perspective   |   F: fit models   |   I: instances   |   M: materials",
               20,
               58);
+    ctx.Print(!toonShader_ ? "C: custom shader unavailable"
+                           : (toonEnabled_ ? "C: Toon shading" : "C: Standard shading"),
+              20,
+              134);
     ctx.Print(shadowEnabled_ ? "WASD: move   |   Arrows: orbit   |   R: reset   |   H: shadows ON"
                              : "WASD: move   |   Arrows: orbit   |   R: reset   |   H: shadows OFF",
               20,
@@ -328,6 +349,11 @@ private:
               releaseMemory_ = true;
             }
             onKeyI_ = press;
+            break;
+          case alloy3d::keyboard::KeyCode::C:
+            if (press && !onKeyC_ && toonShader_)
+              toonEnabled_ = !toonEnabled_;
+            onKeyC_ = press;
             break;
           case alloy3d::keyboard::KeyCode::H:
             if (press && !onKeyH_)

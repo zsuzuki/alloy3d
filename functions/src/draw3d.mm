@@ -2,6 +2,7 @@
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
 #include "dsemaphore.h"
+#include "model_shader_source.h"
 #include "shader_def.h"
 #import <Metal/Metal.h>
 #include <algorithm>
@@ -35,6 +36,17 @@ struct DrawText3D
 };
 using DrawText3DPtr = std::shared_ptr<DrawText3D>;
 
+struct MetalModelShader final : alloy3d::ModelShader
+{
+  std::shared_ptr<const int> owner;
+  id<MTLRenderPipelineState> pipelines[3] = {nil, nil, nil}; // opaque, blend, instances
+  ~MetalModelShader() override
+  {
+    for (auto pipeline : pipelines)
+      [pipeline release];
+  }
+};
+
 struct DrawModel3D
 {
   MetalModel       *model;
@@ -42,6 +54,8 @@ struct DrawModel3D
   simd_float3 rotation;
   simd_float3 scale;
   simd_float4 color;
+  std::shared_ptr<MetalModelShader> shader;
+  simd_float4                       parameters{};
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -56,7 +70,8 @@ struct DrawModel3D
   DrawModel3D &operator=(const DrawModel3D &) = delete;
   DrawModel3D(DrawModel3D &&other) noexcept
       : model(std::exchange(other.model, nil)), position(other.position), rotation(other.rotation),
-        scale(other.scale), color(other.color), instanceOffset(other.instanceOffset),
+        scale(other.scale), color(other.color), shader(std::move(other.shader)),
+        parameters(other.parameters), instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
   }
@@ -174,6 +189,10 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   alloy3d::metal::VertexBuffer<ModelInstanceUniforms> instanceBuffers_[3];
   NSUInteger                                          modelDrawCalls_;
 
+  std::shared_ptr<const int>        shaderOwner_;
+  std::shared_ptr<MetalModelShader> modelShader_;
+  simd_float4                       shaderParameters_;
+
   SimpleLock primLock_;
   SimpleLock planeLock_;
   alloy3d::DirectionalShadow3D shadowSettings_;
@@ -288,6 +307,83 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     throw std::bad_alloc();
 }
 
+- (alloy3d::ModelShaderPtr)createModelShader:(std::string_view)source
+                                 diagnostics:(std::string &)diagnostics
+{
+  diagnostics.clear();
+  if (source.empty() || source.find('\0') != std::string_view::npos)
+  {
+    diagnostics = "Model shader source must be nonempty UTF-8 without null characters";
+    return {};
+  }
+  @autoreleasepool
+  {
+    std::string combined = "#include <metal_stdlib>\n#define ALLOY3D_CUSTOM_SURFACE 1\n";
+    combined += ModelShaderPrefix;
+    combined += "\n#line 1 \"model_surface_user.metal\"\n";
+    combined.append(source);
+    combined += "\n#line 1 \"simple3d.metal\"\n";
+    combined += ModelShaderBody;
+    auto text = [[[NSString alloc] initWithBytes:combined.data()
+                                          length:combined.size()
+                                        encoding:NSUTF8StringEncoding] autorelease];
+    if (!text)
+    {
+      diagnostics = "Model shader source is not valid UTF-8";
+      return {};
+    }
+    NSError *error   = nil;
+    auto     library = [[device_ newLibraryWithSource:text options:nil error:&error] autorelease];
+    if (!library)
+    {
+      diagnostics =
+          error ? error.localizedDescription.UTF8String : "Model shader compilation failed";
+      return {};
+    }
+    auto shader                  = std::make_shared<MetalModelShader>();
+    shader->owner                = shaderOwner_;
+    auto descriptor              = [[[MTLRenderPipelineDescriptor alloc] init] autorelease];
+    descriptor.label             = @"Alloy3D custom model surface";
+    descriptor.rasterSampleCount = sampleCount_;
+    descriptor.depthAttachmentPixelFormat   = depthFormat_;
+    descriptor.stencilAttachmentPixelFormat = depthFormat_;
+    descriptor.fragmentFunction       = [[library newFunctionWithName:@"modelFrag3d"] autorelease];
+    auto color                        = descriptor.colorAttachments[0];
+    color.pixelFormat                 = colorFormat_;
+    color.sourceRGBBlendFactor        = MTLBlendFactorSourceAlpha;
+    color.destinationRGBBlendFactor   = MTLBlendFactorOneMinusSourceAlpha;
+    color.sourceAlphaBlendFactor      = MTLBlendFactorOne;
+    color.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+    for (int i = 0; i < 3; ++i)
+    {
+      descriptor.vertexFunction = [[library
+          newFunctionWithName:i == 2 ? @"modelInstanceVert3d" : @"modelVert3d"] autorelease];
+      color.blendingEnabled     = i == 1;
+      shader->pipelines[i] = [device_ newRenderPipelineStateWithDescriptor:descriptor error:&error];
+      if (!shader->pipelines[i])
+      {
+        diagnostics =
+            error ? error.localizedDescription.UTF8String : "Model shader pipeline creation failed";
+        return {};
+      }
+    }
+    return shader;
+  }
+}
+
+- (bool)setModelShader:(alloy3d::ModelShaderPtr)shader parameters:(simd_float4)parameters
+{
+  if (!std::isfinite(parameters.x) || !std::isfinite(parameters.y) ||
+      !std::isfinite(parameters.z) || !std::isfinite(parameters.w))
+    return false;
+  auto concrete = std::dynamic_pointer_cast<MetalModelShader>(shader);
+  if (shader && (!concrete || concrete->owner != shaderOwner_))
+    return false;
+  modelShader_      = std::move(concrete);
+  shaderParameters_ = parameters;
+  return true;
+}
+
 - (void)initializeWhiteTexture
 {
   uint8_t pixel[] = {255, 255, 255, 255};
@@ -314,6 +410,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
 {
   [super init];
 
+  shaderOwner_      = std::make_shared<const int>(0);
   device_           = view.device;
   colorFormat_      = view.colorPixelFormat;
   depthFormat_      = view.depthStencilPixelFormat;
@@ -962,6 +1059,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
 
   SimpleGuard guard(modelLock_);
   drawModelList_.emplace_back(model, position, rotation, scale, color);
+  drawModelList_.back().shader     = modelShader_;
+  drawModelList_.back().parameters = shaderParameters_;
 }
 
 - (void)drawModelInstances:(MetalModel *)model
@@ -984,7 +1083,11 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   {
     drawModelList_.reserve(drawModelList_.size() + instances.size());
     for (const auto &i : instances)
+    {
       drawModelList_.emplace_back(model, i.position, i.rotation, i.scale, i.color);
+      drawModelList_.back().shader     = modelShader_;
+      drawModelList_.back().parameters = shaderParameters_;
+    }
     return;
   }
   const auto offset = modelInstances_.size();
@@ -992,6 +1095,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   try
   {
     drawModelList_.emplace_back(model, offset, instances.size());
+    drawModelList_.back().shader     = modelShader_;
+    drawModelList_.back().parameters = shaderParameters_;
   }
   catch (...)
   {
@@ -1070,8 +1175,14 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       auto drawPart = [&](const DrawModel3D &dmodel, ModelPart *part, bool blend)
       {
         const bool instanced = dmodel.instanceCount != 0;
-        [renderEncoder setRenderPipelineState:instanced ? pipelineStateModelInstances_
-                                                        : pipelineStateModel_[blend]];
+        auto       pipeline =
+            dmodel.shader ? dmodel.shader->pipelines[instanced ? 2 : int(blend)]
+                          : (instanced ? pipelineStateModelInstances_ : pipelineStateModel_[blend]);
+        [renderEncoder setRenderPipelineState:pipeline];
+        if (dmodel.shader)
+          [renderEncoder setFragmentBytes:&dmodel.parameters
+                                   length:sizeof(dmodel.parameters)
+                                  atIndex:6];
         [renderEncoder setDepthStencilState:modelDepth_[blend]];
         MaterialUniforms material{
             {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)}};
