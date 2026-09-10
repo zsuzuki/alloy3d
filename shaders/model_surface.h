@@ -14,4 +14,5 @@ struct ModelSurface
   float  diffuse; // N dot L * light intensity, before shadow attenuation
   float  shadow;  // visibility in [0,1]
   bool   unlit;   // material unlit or no usable normal
+  float3 ambientColor; // effective ambient RGB, including hemisphere lighting
 };

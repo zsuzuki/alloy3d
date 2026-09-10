@@ -196,6 +196,9 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   SimpleLock primLock_;
   SimpleLock planeLock_;
   alloy3d::DirectionalShadow3D shadowSettings_;
+  alloy3d::Fog3D fogSettings_;
+  alloy3d::HemisphereLight3D hemisphereSettings_;
+  float fogInverseRange_;
   id<MTLTexture>               shadowMaps_[3];
   id<MTLTexture>               shadowFallback_;
   id<MTLRenderPipelineState>   shadowPipelines_[3]; // primitive, model, instanced model
@@ -931,6 +934,37 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   shadowSettings_ = settings;
 }
 
+- (void)setFog:(const alloy3d::Fog3D &)fog
+{
+  for (int i = 0; i < 3; ++i)
+    if (!std::isfinite(fog.color[i]) || fog.color[i] < 0 || fog.color[i] > 1)
+      throw std::invalid_argument("Alloy3D fog RGB must be finite and in [0,1]");
+  if (!std::isfinite(fog.start) || !std::isfinite(fog.end) || fog.start < 0 || fog.end <= fog.start)
+    throw std::invalid_argument("Alloy3D fog requires finite 0 <= start < end");
+  const float inverseRange = 1.0f / (fog.end - fog.start);
+  if (!std::isfinite(inverseRange))
+    throw std::invalid_argument("Alloy3D fog range is too small");
+  fogSettings_ = fog;
+  fogInverseRange_ = inverseRange;
+}
+
+- (void)setHemisphereLight:(const alloy3d::HemisphereLight3D &)light
+{
+  for (int i = 0; i < 3; ++i)
+    if (!std::isfinite(light.skyColor[i]) || light.skyColor[i] < 0 || light.skyColor[i] > 1 ||
+        !std::isfinite(light.groundColor[i]) || light.groundColor[i] < 0 || light.groundColor[i] > 1 ||
+        !std::isfinite(light.up[i]))
+      throw std::invalid_argument("Alloy3D hemisphere requires finite up and RGB in [0,1]");
+  if (!std::isfinite(light.intensity) || light.intensity < 0 || light.intensity > 1)
+    throw std::invalid_argument("Alloy3D hemisphere intensity must be in [0,1]");
+  auto up = simd_make_double3(light.up.x, light.up.y, light.up.z);
+  if (simd_length_squared(up) == 0)
+    throw std::invalid_argument("Alloy3D hemisphere up is zero");
+  up = simd_normalize(up);
+  hemisphereSettings_ = light;
+  hemisphereSettings_.up = simd_make_float3(up.x, up.y, up.z);
+}
+
 - (void)prepareInstances:(simd_float4x4)view
 {
   if (instancesPrepared_)
@@ -1136,6 +1170,15 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
                                             : matrix_identity_float4x4;
     uniform->shadowParameters =
         simd_make_float4(shadowReady_ ? 1 : 0, shadowSettings_.depthBias, 0, 0);
+    uniform->fogColorAndEnabled = simd_make_float4(fogSettings_.color, float(fogSettings_.enabled));
+    uniform->fogParameters = simd_make_float4(fogSettings_.start, fogInverseRange_, 0, 0);
+    uniform->hemisphereSky =
+        simd_make_float4(hemisphereSettings_.skyColor * hemisphereSettings_.intensity, 0);
+    uniform->hemisphereGround =
+        simd_make_float4(hemisphereSettings_.groundColor * hemisphereSettings_.intensity, 0);
+    auto viewUp = simd_mul(mdlview, simd_make_float4(hemisphereSettings_.up, 0)).xyz;
+    uniform->hemisphereUpAndEnabled =
+        simd_make_float4(viewUp, float(hemisphereSettings_.enabled));
     [renderEncoder setFragmentTexture:shadowReady_ ? shadowMaps_[pageIndex_] : shadowFallback_
                               atIndex:TextureIndexShadow];
     [renderEncoder setDepthStencilState:modelDepth_[0]];
@@ -1291,6 +1334,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       [renderEncoder setRenderPipelineState:pipelineStateText_];
       [renderEncoder setVertexBuffer:textVtx offset:0 atIndex:0];
       [renderEncoder setVertexBuffer:uniformBuff offset:0 atIndex:1];
+      [renderEncoder setFragmentBuffer:uniformBuff offset:0 atIndex:1];
 
       vtxCount = 0;
       for (auto dtext : drawTextList_)

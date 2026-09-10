@@ -77,6 +77,9 @@ int main()
 - `SetLight3D(direction, ambient, diffuse)`
 - `SetDirectionalLight3D(light)`: 色・方向・環境光・拡散光を設定します。
 - `SetDirectionalShadow3D(shadow)`: 影の有効化・範囲・解像度・バイアスを設定します。
+- `SetFog3D(fog)`: カメラ前方の奥行きによる線形フォグを設定します（既定OFF）。
+- `SetHemisphereLight3D(light)`: 空色・地面色による環境光を設定します（既定OFF）。
+  詳細は[フォグと環境光](environment-ja.md)を参照してください。
 - `DrawLine3D(from, to, color)`
 - `DrawTriangle3D(p0, p1, p2, color)`
 - `DrawPlane3D(p0, p1, p2, p3, color)`

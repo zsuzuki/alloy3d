@@ -3,6 +3,7 @@
 //
 #include "shader_def.h"
 #include "shadow.h"
+#include "environment.h"
 
 #include <metal_stdlib>
 using namespace metal;
@@ -13,6 +14,7 @@ struct v2f
   float3 normal;
   half4  color;
   float4 shadowPosition;
+  float viewDepth;
 };
 
 //
@@ -25,6 +27,7 @@ vertex v2f primVert3d(device const VertexDataPrim3D *vertexData [[buffer(0)]],
 
   const device VertexDataPrim3D &vd  = vertexData[vID];
   float4                         pos = float4(vd.position, 1.0);
+  o.viewDepth = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * pos).z : 0;
   pos        = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
   o.position = pos;
   o.normal   = cameraData.worldNormalTransform * vd.normal;
@@ -42,18 +45,18 @@ fragment half4 primFrag3d(v2f in [[stage_in]], device const Uniforms &cameraData
   float normalLength = length(in.normal);
   if (normalLength < 0.001)
   {
-    return baseColor;
+    return ApplyFog(baseColor, in.viewDepth, cameraData);
   }
 
   float3 n          = in.normal / normalLength;
   float3 l          = normalize(-cameraData.lightDirectionAndAmbient.xyz);
-  half   ambient    = half(saturate(cameraData.lightDirectionAndAmbient.w));
+  half3  ambient    = EnvironmentAmbient(n, cameraData);
   half   diffuse    = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
   diffuse *= ShadowVisibility(in.shadowPosition, cameraData.shadowParameters, shadowMap);
   half3  lightColor = half3(cameraData.lightColorAndDiffuse.xyz);
   half3  illum      = baseColor.rgb * (ambient + diffuse * lightColor);
 
-  return half4(illum, baseColor.a);
+  return ApplyFog(half4(illum, baseColor.a), in.viewDepth, cameraData);
 }
 
 fragment void shadowPrimFrag3d(v2f in [[stage_in]])

@@ -298,6 +298,17 @@ public:
     [draw3d_ setLightDirection:direction ambient:ambient diffuse:diffuse];
   }
 
+  bool SetFog3D(const alloy3d::Fog3D &fog) override
+  {
+    [draw3d_ setFog:fog];
+    return true;
+  }
+  bool SetHemisphereLight3D(const alloy3d::HemisphereLight3D &light) override
+  {
+    [draw3d_ setHemisphereLight:light];
+    return true;
+  }
+
   void DrawLine3D(simd_float3 from, simd_float3 to, simd_float4 color) override
   {
     [draw3d_ drawLine:from to:to color:color];

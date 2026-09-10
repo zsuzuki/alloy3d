@@ -22,7 +22,7 @@ set(SOURCES
 
 set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../shaders")
 set(MODEL_SHADER_PREFIX "")
-foreach(PART shader_def.h shadow.h model_surface.h)
+foreach(PART shader_def.h shadow.h environment.h model_surface.h)
   file(READ "${SHADER_SOURCE_DIR}/${PART}" PART_SOURCE)
   string(APPEND MODEL_SHADER_PREFIX "\n${PART_SOURCE}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SHADER_SOURCE_DIR}/${PART}")

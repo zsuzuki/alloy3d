@@ -98,6 +98,8 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
 - (void)setLightDirection:(simd_float3)direction ambient:(float)ambient diffuse:(float)diffuse;
 - (void)setDirectionalLight:(const alloy3d::DirectionalLight3D &)light;
 - (void)setDirectionalShadow:(const alloy3d::DirectionalShadow3D &)shadow;
+- (void)setFog:(const alloy3d::Fog3D &)fog;
+- (void)setHemisphereLight:(const alloy3d::HemisphereLight3D &)light;
 // Encode before the color pass, using the same queue, camera and current frame page.
 - (void)encodeShadowMap:(nonnull id<MTLCommandBuffer>)commands
                  camera:(nonnull alloy3d::CameraData *)camera;

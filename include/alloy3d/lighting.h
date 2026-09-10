@@ -4,6 +4,25 @@
 
 namespace alloy3d
 {
+struct Fog3D
+{
+  bool enabled = false;
+  // Linear RGB. Distance is camera-forward depth in world units, not radial distance.
+  simd_float3 color = {.5f, .6f, .7f};
+  float start = 10;
+  float end   = 100;
+};
+
+struct HemisphereLight3D
+{
+  bool enabled = false;
+  // Replaces DirectionalLight3D::ambient when enabled. Linear RGB and intensity in [0,1].
+  simd_float3 skyColor    = {.65f, .8f, 1};
+  simd_float3 groundColor = {.3f, .25f, .2f};
+  simd_float3 up          = {0, 1, 0}; // Finite, nonzero world-space direction.
+  float intensity = .35f;
+};
+
 struct DirectionalLight3D
 {
   // World-space direction in which light travels. Finite, nonzero.

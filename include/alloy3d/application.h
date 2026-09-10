@@ -98,6 +98,10 @@ public:
   }
   // Returns false on unsupported custom contexts; bundled host throws on invalid settings.
   virtual bool SetDirectionalShadow3D(const DirectionalShadow3D &shadow) { return false; }
+  // Persistent scene state, evaluated at render time like the directional light.
+  // Returns false on unsupported contexts. Invalid settings throw without changing state.
+  virtual bool SetFog3D(const Fog3D &fog) { return false; }
+  virtual bool SetHemisphereLight3D(const HemisphereLight3D &light) { return false; }
   virtual void DrawLine3D(simd_float3 from, simd_float3 to, simd_float4 color) = 0;
   virtual void DrawTriangle3D(simd_float3 p0, simd_float3 p1, simd_float3 p2,
                               simd_float4 color)                               = 0;

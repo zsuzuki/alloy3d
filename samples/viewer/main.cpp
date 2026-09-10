@@ -60,6 +60,8 @@ class MainLoop : public alloy3d::ApplicationLoop
   alloy3d::ModelShaderPtr    toonShader_;
   bool                       toonEnabled_ = false, onKeyC_ = false;
   bool                       shadowEnabled_ = true, shadowChanged_ = true, onKeyH_ = false;
+  bool fogEnabled_ = false, hemisphereEnabled_ = false, environmentChanged_ = true;
+  bool onKeyG_ = false, onKeyL_ = false;
   alloy3d::gamepad::PadState padState_{};
   alloy3d::gamepad::PadState padStateUpdate_{};
   bool              onKeyW_ = false;
@@ -220,7 +222,7 @@ float3 alloy3dShade(ModelSurface s, float4 p)
   if (s.unlit) return s.baseColor;
   float bands = max(p.x, 1.0);
   float diffuse = floor(s.diffuse * bands + 0.5) / bands;
-  return s.baseColor * (s.ambient + diffuse * s.shadow * s.lightColor);
+  return s.baseColor * (s.ambientColor + diffuse * s.shadow * s.lightColor);
 }
 )metal",
                                         shaderError);
@@ -262,6 +264,19 @@ float3 alloy3dShade(ModelSurface s, float4 p)
     {
       ctx.ReleaseUnusedMemory();
       releaseMemory_ = false;
+    }
+    if (environmentChanged_)
+    {
+      alloy3d::Fog3D fog;
+      fog.enabled = fogEnabled_;
+      fog.color = {.02f, .025f, .035f}; // Match the background in linear RGB.
+      fog.start = 8;
+      fog.end = 30;
+      ctx.SetFog3D(fog);
+      alloy3d::HemisphereLight3D hemisphere;
+      hemisphere.enabled = hemisphereEnabled_;
+      ctx.SetHemisphereLight3D(hemisphere);
+      environmentChanged_ = false;
     }
     sceneBounds_ = {};
     ctx.DrawPlane3D(simd_make_float3(-10, -.02f, -10),
@@ -307,6 +322,9 @@ float3 alloy3dShade(ModelSurface s, float4 p)
                              : "WASD: move   |   Arrows: orbit   |   R: reset   |   H: shadows OFF",
               20,
               20);
+    ctx.Print(std::format("G: fog {}   |   L: sky/ground ambient {}",
+                           fogEnabled_ ? "ON" : "OFF", hemisphereEnabled_ ? "ON" : "OFF"),
+              20, 172);
   }
 
 private:
@@ -362,6 +380,22 @@ private:
               shadowChanged_ = true;
             }
             onKeyH_ = press;
+            break;
+          case alloy3d::keyboard::KeyCode::G:
+            if (press && !onKeyG_)
+            {
+              fogEnabled_ = !fogEnabled_;
+              environmentChanged_ = true;
+            }
+            onKeyG_ = press;
+            break;
+          case alloy3d::keyboard::KeyCode::L:
+            if (press && !onKeyL_)
+            {
+              hemisphereEnabled_ = !hemisphereEnabled_;
+              environmentChanged_ = true;
+            }
+            onKeyL_ = press;
             break;
           case alloy3d::keyboard::KeyCode::M:
             if (press && !onKeyM_)

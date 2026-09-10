@@ -49,6 +49,11 @@ typedef struct
   simd_float4     modelColor;
   matrix_float4x4 shadowTransform;  // view space -> light clip space
   simd_float4     shadowParameters; // enabled, depth bias, reserved, reserved
+  simd_float4     fogColorAndEnabled;
+  simd_float4     fogParameters; // start, 1/(end-start), reserved, reserved
+  simd_float4     hemisphereSky; // RGB scaled by intensity
+  simd_float4     hemisphereGround;
+  simd_float4     hemisphereUpAndEnabled; // view-space up, enabled
 } Uniforms;
 
 struct MaterialUniforms

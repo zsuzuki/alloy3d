@@ -33,8 +33,9 @@ struct Harness
   id<MTLDepthStencilState> depthState;
   id<MTLCommandBuffer>     commands[3] = {nil, nil, nil};
   double                   submitMs = 0, encodeMs = 0, gpuMs = 0;
+  NSUInteger               size;
 
-  Harness(id<MTLDevice> d, const char *shader) : device(d)
+  Harness(id<MTLDevice> d, const char *shader, NSUInteger dimension = 256) : device(d), size(dimension)
   {
     NSError *error = nil;
     library = [d newLibraryWithURL:[NSURL fileURLWithPath:[NSString stringWithUTF8String:shader]]
@@ -46,8 +47,8 @@ struct Harness
     draw                         = [[Draw3D alloc] initWithMetalKitView:view shaderlib:library];
     queue                        = [d newCommandQueue];
     auto desc  = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:view.colorPixelFormat
-                                                                    width:256
-                                                                   height:256
+                                                                    width:size
+                                                                   height:size
                                                                 mipmapped:NO];
     desc.usage = MTLTextureUsageRenderTarget;
     desc.storageMode = MTLStorageModeShared;
@@ -125,10 +126,10 @@ struct Harness
     [commands[slot] waitUntilCompleted];
     Check(commands[slot].status == MTLCommandBufferStatusCompleted, "GPU command failed");
     gpuMs = (commands[slot].GPUEndTime - commands[slot].GPUStartTime) * 1000;
-    Pixels result(256 * 256);
+    Pixels result(size * size);
     [colors[slot] getBytes:result.data()
-               bytesPerRow:256 * 4
-                fromRegion:MTLRegionMake2D(0, 0, 256, 256)
+               bytesPerRow:size * 4
+                fromRegion:MTLRegionMake2D(0, 0, size, size)
                mipmapLevel:0];
     return result;
   }

@@ -4,6 +4,7 @@
 #include "model_surface.h"
 #include "shader_def.h"
 #include "shadow.h"
+#include "environment.h"
 
 #include <metal_stdlib>
 using namespace metal;
@@ -17,6 +18,7 @@ struct v2f
     float4 modelColor [[flat]];
     uint   mirrored [[flat]];
     float4 shadowPosition;
+    float viewDepth;
 };
 
 //
@@ -32,6 +34,7 @@ vertex v2f simpleVert3d(device const VertexData3D* vertexData [[buffer(0)]],
 
   float4 pos = float4(vd.position, 1.0);
   o.position = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
+  o.viewDepth = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * pos).z : 0;
   o.normal   = cameraData.worldNormalTransform * vd.normal;
   o.texcoord = vd.texcoord.xy;
   o.color    = vd.color;
@@ -95,6 +98,7 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   float                           orientation;
   SkinVertex(vd, jointMatrices, position, normal, orientation);
   o.position   = cameraData.perspectiveTransform * cameraData.worldTransform * position;
+  o.viewDepth  = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * position).z : 0;
   o.normal     = UnitModelNormal(cameraData.worldNormalTransform * normal);
   o.texcoord   = vd.texcoord;
   o.color      = vd.color;
@@ -121,6 +125,7 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   float                               orientation;
   SkinVertex(vd, jointMatrices, position, normal, orientation);
   o.position   = cameraData.perspectiveTransform * instance.modelView * position;
+  o.viewDepth  = cameraData.fogColorAndEnabled.w != 0 ? -(instance.modelView * position).z : 0;
   o.normal     = UnitModelNormal(instance.normalTransform * normal);
   o.texcoord   = vd.texcoord;
   o.color      = vd.color;
@@ -133,7 +138,8 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   return o;
 }
 
-fragment half4 simpleFrag3d( v2f in [[stage_in]], texture2d< half, access::sample > tex [[texture(0)]] )
+fragment half4 simpleFrag3d( v2f in [[stage_in]], texture2d< half, access::sample > tex [[texture(0)]],
+                            device const Uniforms &cameraData [[buffer(1)]] )
 {
     constexpr sampler s( address::repeat, filter::linear );
 
@@ -147,7 +153,7 @@ fragment half4 simpleFrag3d( v2f in [[stage_in]], texture2d< half, access::sampl
 
     half3 illum = (in.color.rgb * texel.xyz * 0.1) + (in.color.rgb * texel.xyz * ndotl);
 
-    return half4( illum, in.color.a * texel.a );
+    return ApplyFog(half4(illum, in.color.a * texel.a), in.viewDepth, cameraData);
 }
 
 fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]],
@@ -177,19 +183,20 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   bool  unlit        = material.parameters.w != 0 || normalLength < 0.001;
 #ifndef ALLOY3D_CUSTOM_SURFACE
   if (unlit)
-    return baseColor;
+    return ApplyFog(baseColor, in.viewDepth, cameraData);
 #endif
   float3 n = normalLength >= 0.001 ? in.normal / normalLength : float3(0);
   if (!front)
     n = -n;
   float3 l       = normalize(-cameraData.lightDirectionAndAmbient.xyz);
   half   ambient = half(saturate(cameraData.lightDirectionAndAmbient.w));
+  half3 ambientColor = EnvironmentAmbient(n, cameraData);
   half   diffuse = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
   half   shadow =
       unlit ? half(1) : ShadowVisibility(in.shadowPosition, cameraData.shadowParameters, shadowMap);
   half3 lightColor = half3(cameraData.lightColorAndDiffuse.xyz);
   half3 litColor =
-      unlit ? baseColor.rgb : baseColor.rgb * (ambient + diffuse * shadow * lightColor);
+      unlit ? baseColor.rgb : baseColor.rgb * (ambientColor + diffuse * shadow * lightColor);
 #ifdef ALLOY3D_CUSTOM_SURFACE
   ModelSurface surface{float3(baseColor.rgb),
                        float3(litColor),
@@ -199,10 +206,11 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                        float(ambient),
                        float(diffuse),
                        float(shadow),
-                       unlit};
+                       unlit,
+                       float3(ambientColor)};
   litColor = half3(alloy3dShade(surface, parameters));
 #endif
-  return half4(litColor, baseColor.a);
+  return ApplyFog(half4(litColor, baseColor.a), in.viewDepth, cameraData);
 }
 
 vertex v2f textVert3d(device const VertexData3D* vertexData [[buffer(0)]],
@@ -215,6 +223,7 @@ vertex v2f textVert3d(device const VertexData3D* vertexData [[buffer(0)]],
 
   float4 pos = float4(vd.position, 1.0);
   o.position = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
+  o.viewDepth = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * pos).z : 0;
   o.normal   = float3(0.0, 0.0, 0.0);
   o.texcoord = vd.texcoord.xy;
   o.color    = vd.color;
@@ -222,11 +231,12 @@ vertex v2f textVert3d(device const VertexData3D* vertexData [[buffer(0)]],
   return o;
 }
 
-fragment half4 textFrag3d(v2f in [[stage_in]], texture2d<half, access::sample> tex [[texture(0)]])
+fragment half4 textFrag3d(v2f in [[stage_in]], texture2d<half, access::sample> tex [[texture(0)]],
+                          device const Uniforms &cameraData [[buffer(1)]])
 {
     constexpr sampler s(address::clamp_to_edge, filter::linear);
     half4 texel = tex.sample(s, in.texcoord).rgba;
-    return in.color * texel;
+    return ApplyFog(in.color * texel, in.viewDepth, cameraData);
 }
 
 // Same skinning, winding and MASK coverage as the color pass. No color attachment.
