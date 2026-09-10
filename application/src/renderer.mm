@@ -282,6 +282,11 @@ public:
   {
     return [draw3d_ setModelShader:std::move(shader) parameters:parameters];
   }
+  bool SetModelHighlight3D(const alloy3d::ModelHighlight3D &highlight) override
+  {
+    [draw3d_ setModelHighlight:highlight];
+    return true;
+  }
 
   void SetDirectionalLight3D(const alloy3d::DirectionalLight3D &light) override
   {

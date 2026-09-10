@@ -4,6 +4,13 @@
 
 namespace alloy3d
 {
+struct ModelHighlight3D
+{
+  // Blinn-Phong specular light. Zero strength disables it; no effect on Unlit materials.
+  float strength  = 0;  // Finite [0,1].
+  float shininess = 32; // Finite [1,128]; larger means a narrower highlight.
+};
+
 struct Fog3D
 {
   bool enabled = false;

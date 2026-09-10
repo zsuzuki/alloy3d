@@ -95,6 +95,7 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
 - (alloy3d::ModelShaderPtr)createModelShader:(std::string_view)source
                                  diagnostics:(std::string &)diagnostics;
 - (bool)setModelShader:(alloy3d::ModelShaderPtr)shader parameters:(simd_float4)parameters;
+- (void)setModelHighlight:(const alloy3d::ModelHighlight3D &)highlight;
 - (void)setLightDirection:(simd_float3)direction ambient:(float)ambient diffuse:(float)diffuse;
 - (void)setDirectionalLight:(const alloy3d::DirectionalLight3D &)light;
 - (void)setDirectionalShadow:(const alloy3d::DirectionalShadow3D &)shadow;

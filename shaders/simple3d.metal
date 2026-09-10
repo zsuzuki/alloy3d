@@ -19,6 +19,7 @@ struct v2f
     uint   mirrored [[flat]];
     float4 shadowPosition;
     float viewDepth;
+    float3 viewPosition;
 };
 
 //
@@ -89,6 +90,7 @@ float3 UnitModelNormal(float3 normal)
 vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
                        device const Uniforms          &cameraData [[buffer(1)]],
                        device const float4x4          *jointMatrices [[buffer(3)]],
+                       constant MaterialUniforms      &material [[buffer(5)]],
                        uint                            vertexId [[vertex_id]])
 {
   v2f                             o{};
@@ -99,6 +101,8 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   SkinVertex(vd, jointMatrices, position, normal, orientation);
   o.position   = cameraData.perspectiveTransform * cameraData.worldTransform * position;
   o.viewDepth  = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * position).z : 0;
+  if (material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0)
+    o.viewPosition = (cameraData.worldTransform * position).xyz;
   o.normal     = UnitModelNormal(cameraData.worldNormalTransform * normal);
   o.texcoord   = vd.texcoord;
   o.color      = vd.color;
@@ -115,6 +119,7 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
                                device const Uniforms              &cameraData [[buffer(1)]],
                                device const float4x4              *jointMatrices [[buffer(3)]],
                                device const ModelInstanceUniforms *instances [[buffer(4)]],
+                               constant MaterialUniforms          &material [[buffer(5)]],
                                uint vertexId [[vertex_id]], uint instanceId [[instance_id]])
 {
   v2f                                 o{};
@@ -126,6 +131,8 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   SkinVertex(vd, jointMatrices, position, normal, orientation);
   o.position   = cameraData.perspectiveTransform * instance.modelView * position;
   o.viewDepth  = cameraData.fogColorAndEnabled.w != 0 ? -(instance.modelView * position).z : 0;
+  if (material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0)
+    o.viewPosition = (instance.modelView * position).xyz;
   o.normal     = UnitModelNormal(instance.normalTransform * normal);
   o.texcoord   = vd.texcoord;
   o.color      = vd.color;
@@ -189,7 +196,6 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   if (!front)
     n = -n;
   float3 l       = normalize(-cameraData.lightDirectionAndAmbient.xyz);
-  half   ambient = half(saturate(cameraData.lightDirectionAndAmbient.w));
   half3 ambientColor = EnvironmentAmbient(n, cameraData);
   half   diffuse = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
   half   shadow =
@@ -197,7 +203,24 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   half3 lightColor = half3(cameraData.lightColorAndDiffuse.xyz);
   half3 litColor =
       unlit ? baseColor.rgb : baseColor.rgb * (ambientColor + diffuse * shadow * lightColor);
+  half3 specularColor = half3(0);
+  if (!unlit && material.highlight.x > 0 && diffuse > 0 && shadow > 0)
+  {
+    // Orthographic rays are parallel. Perspective rays point toward the camera origin.
+    float3 v = material.highlight.z != 0 ? UnitModelNormal(-in.viewPosition) : float3(0, 0, 1);
+    float3 sum = l + v;
+    float h2 = dot(sum, sum);
+    if (dot(n, v) > 0 && h2 > 1e-8f)
+    {
+      float nh = saturate(dot(n, sum * rsqrt(h2)));
+      float specular = material.highlight.x * pow(nh, material.highlight.y) *
+                       saturate(cameraData.lightColorAndDiffuse.w) * float(shadow);
+      specularColor = half3(specular) * lightColor;
+      litColor += specularColor;
+    }
+  }
 #ifdef ALLOY3D_CUSTOM_SURFACE
+  half ambient = half(saturate(cameraData.lightDirectionAndAmbient.w));
   ModelSurface surface{float3(baseColor.rgb),
                        float3(litColor),
                        n,
@@ -207,7 +230,8 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                        float(diffuse),
                        float(shadow),
                        unlit,
-                       float3(ambientColor)};
+                       float3(ambientColor),
+                       float3(specularColor)};
   litColor = half3(alloy3dShade(surface, parameters));
 #endif
   return ApplyFog(half4(litColor, baseColor.a), in.viewDepth, cameraData);

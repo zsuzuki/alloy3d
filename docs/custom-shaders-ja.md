@@ -16,7 +16,7 @@ float3 alloy3dShade(ModelSurface s, float4 p)
   if (s.unlit) return s.baseColor;
   float bands = max(p.x, 1.0);
   float diffuse = floor(s.diffuse * bands + 0.5) / bands;
-  return s.baseColor * (s.ambientColor + diffuse * s.shadow * s.lightColor);
+  return s.baseColor * (s.ambientColor + diffuse * s.shadow * s.lightColor) + s.specularColor;
 }
 )metal", diagnostics);
 if (!toon) {
@@ -62,6 +62,7 @@ falseを返し、以前の設定を維持します。モデルのアニメーシ
 | `lightColor` | `float3` | 平行光源のRGB |
 | `ambient` | `float` | 従来の平行光設定のambient値（互換用） |
 | `ambientColor` | `float3` | 空・地面の環境光を反映した有効な環境光RGB |
+| `specularColor` | `float3` | 簡易ハイライトのRGB。無効時は0。litColorに加算済み |
 | `diffuse` | `float` | max(N・L, 0) × 拡散光強度。影を掛ける前の値 |
 | `shadow` | `float` | 影の可視率。0で影、1で明部。影OFF・範囲外・Unlitでは1 |
 | `unlit` | `bool` | Unlit素材、または利用できる法線がない場合にtrue |
@@ -69,7 +70,9 @@ falseを返し、以前の設定を維持します。モデルのアニメーシ
 標準描画と同じ出力にする最小関数は `return s.litColor;` です。
 Unlitの扱いと影の掛け方は関数で選べます。上の例は両方を維持しています。
 計算は既存の線形色の描画経路で行われます。出力はRGBのみで、アルファ値は変更しません。
-`litColor` は環境光を反映済みです。[距離フォグ](environment-ja.md)はカスタム関数の後に
+`litColor` は環境光と[簡易ハイライト](highlights-ja.md)を反映済みです。
+独自に陰影を組み立てる場合は `specularColor` を加算します。
+[距離フォグ](environment-ja.md)はカスタム関数の後に
 ライブラリが適用します。`ambient` を使う既存関数で空・地面の色を反映するには、
 `ambientColor` へ変更してください。
 

@@ -88,6 +88,9 @@ public:
   {
     return !shader;
   }
+  // Persistent model draw state, copied at submission (also for an instance batch).
+  // Default strength is zero. Invalid settings throw without changing state.
+  virtual bool SetModelHighlight3D(const ModelHighlight3D &highlight) { return false; }
 
   // Direction the light travels, in world coordinates.
   virtual void SetLight3D(simd_float3 direction, float ambient, float diffuse) = 0;

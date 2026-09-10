@@ -65,13 +65,13 @@ Unlit素材、法線のない線・モデル、3D文字には環境光を適用�
 以前の設定を維持します。未対応の独自ApplicationContextでは既定実装がfalseを返します。
 公開API追加のため利用側も再ビルドし、更新した `shaders.metallib` を配置してください。
 
-カスタムモデルシェーダーの `s.litColor` は環境光を反映済み、フォグは未適用です。
+カスタムモデルシェーダーの `s.litColor` は環境光・簡易ハイライトを反映済み、フォグは未適用です。
 `return s.litColor;` なら標準描画と一致します。陰影を自分で組み立てる場合は、
 新しい `s.ambientColor`（float3）を使います。
 
 ```metal
 if (s.unlit) return s.baseColor;
-return s.baseColor * (s.ambientColor + s.diffuse * s.shadow * s.lightColor);
+return s.baseColor * (s.ambientColor + s.diffuse * s.shadow * s.lightColor) + s.specularColor;
 ```
 
 従来の `s.ambient` は互換性のため、平行光設定のスカラー値のままです。

@@ -23,6 +23,7 @@ Alloy3D was split out from the earlier `metaltest` rendering test repository.
 - [テクスチャのミップマップ](docs/mipmaps-ja.md)
 - [平行光源とシャドウマップ](docs/shadows-ja.md)
 - [距離フォグと空・地面の環境光](docs/environment-ja.md)
+- [モデルの簡易ハイライト](docs/highlights-ja.md)
 - [モデルのカスタムシェーダー](docs/custom-shaders-ja.md)
 
 ## Status

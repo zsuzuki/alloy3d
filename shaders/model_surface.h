@@ -6,7 +6,7 @@ using namespace metal;
 struct ModelSurface
 {
   float3 baseColor; // texture * vertex/material color * placement tint
-  float3 litColor;  // built-in RGB, including shadows and unlit handling
+  float3 litColor;  // built-in RGB, including shadows, highlights and unlit handling (before fog)
   float3 normal;    // normalized, view space, corrected for back faces; zero if absent
   float2 texcoord;
   float3 lightColor;
@@ -15,4 +15,5 @@ struct ModelSurface
   float  shadow;  // visibility in [0,1]
   bool   unlit;   // material unlit or no usable normal
   float3 ambientColor; // effective ambient RGB, including hemisphere lighting
+  float3 specularColor; // built-in highlight RGB (already included in litColor)
 };

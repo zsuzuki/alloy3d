@@ -62,6 +62,7 @@ class MainLoop : public alloy3d::ApplicationLoop
   bool                       shadowEnabled_ = true, shadowChanged_ = true, onKeyH_ = false;
   bool fogEnabled_ = false, hemisphereEnabled_ = false, environmentChanged_ = true;
   bool onKeyG_ = false, onKeyL_ = false;
+  bool highlightEnabled_ = false, onKeyP_ = false;
   alloy3d::gamepad::PadState padState_{};
   alloy3d::gamepad::PadState padStateUpdate_{};
   bool              onKeyW_ = false;
@@ -222,7 +223,7 @@ float3 alloy3dShade(ModelSurface s, float4 p)
   if (s.unlit) return s.baseColor;
   float bands = max(p.x, 1.0);
   float diffuse = floor(s.diffuse * bands + 0.5) / bands;
-  return s.baseColor * (s.ambientColor + diffuse * s.shadow * s.lightColor);
+  return s.baseColor * (s.ambientColor + diffuse * s.shadow * s.lightColor) + s.specularColor;
 }
 )metal",
                                         shaderError);
@@ -286,6 +287,7 @@ float3 alloy3dShade(ModelSurface s, float4 p)
                     simd_make_float4(.18f, .20f, .23f, 1));
     DrawGrid(ctx);
     ctx.SetModelShader(toonEnabled_ ? toonShader_ : nullptr, simd_make_float4(3, 0, 0, 0));
+    ctx.SetModelHighlight3D({highlightEnabled_ ? .3f : 0.f, 32});
     if (materialDemo_)
       DrawMaterialDemo(ctx, deltaTime);
     else if (instanceDemo_)
@@ -298,6 +300,7 @@ float3 alloy3dShade(ModelSurface s, float4 p)
       DrawAnimationLabel(ctx);
     }
     ctx.SetModelShader(nullptr);
+    ctx.SetModelHighlight3D({});
     if (fitRequested_)
     {
       if (sceneBounds_.isValid())
@@ -322,8 +325,9 @@ float3 alloy3dShade(ModelSurface s, float4 p)
                              : "WASD: move   |   Arrows: orbit   |   R: reset   |   H: shadows OFF",
               20,
               20);
-    ctx.Print(std::format("G: fog {}   |   L: sky/ground ambient {}",
-                           fogEnabled_ ? "ON" : "OFF", hemisphereEnabled_ ? "ON" : "OFF"),
+    ctx.Print(std::format("G: fog {}   |   L: sky/ground ambient {}   |   P: highlights {}",
+                           fogEnabled_ ? "ON" : "OFF", hemisphereEnabled_ ? "ON" : "OFF",
+                           highlightEnabled_ ? "ON" : "OFF"),
               20, 172);
   }
 
@@ -396,6 +400,11 @@ private:
               environmentChanged_ = true;
             }
             onKeyL_ = press;
+            break;
+          case alloy3d::keyboard::KeyCode::P:
+            if (press && !onKeyP_)
+              highlightEnabled_ = !highlightEnabled_;
+            onKeyP_ = press;
             break;
           case alloy3d::keyboard::KeyCode::M:
             if (press && !onKeyM_)
