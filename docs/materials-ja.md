@@ -93,7 +93,9 @@ python3 tools/generate_material_fixtures.py --check
 平行光源の影は[シャドウマップ](shadows-ja.md)に対応しています。
 RGBの変更は[モデルのカスタムシェーダー](custom-shaders-ja.md)に対応しています。
 金属度・粗さ、法線マップ、IBLは今後の対象です。
-テクスチャは既存の埋め込み画像／TEXCOORD_0／固定repeat・linearサンプラーの対応範囲を維持します。
+テクスチャは埋め込み画像／TEXCOORD_0／固定repeatに対応します。
+読み込み時に[ミップマップ](mipmaps-ja.md)を生成し、linear＋mip linearで補間します。
+MASKの細部はアルファの平均化により遠景で変化する場合があります。
 
 仕様の参照先:
 [glTF 2.0 Alpha Coverage / Double Sided](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#alpha-coverage)、

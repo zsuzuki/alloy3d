@@ -171,7 +171,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   const bool front = frontFacing != bool(in.mirrored);
   if (!front && material.parameters.z == 0)
     discard_fragment();
-  constexpr sampler s(address::repeat, filter::linear);
+  constexpr sampler s(address::repeat, filter::linear, mip_filter::linear);
   half4             baseColor = in.color * tex.sample(s, in.texcoord).rgba;
   if (material.parameters.x == 1 && float(baseColor.a) < material.parameters.y)
     discard_fragment();
@@ -248,7 +248,7 @@ fragment void shadowModelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_fa
     discard_fragment();
   if (material.parameters.x == 1)
   {
-    constexpr sampler s(address::repeat, filter::linear);
+    constexpr sampler s(address::repeat, filter::linear, mip_filter::linear);
     if (float(in.color.a * tex.sample(s, in.texcoord).a) < material.parameters.y)
       discard_fragment();
   }

@@ -20,6 +20,7 @@ Alloy3D was split out from the earlier `metaltest` rendering test repository.
 - [インスタンス描画とモデル資源の共有](docs/model-instances-ja.md)
 - [カメラとモデルの全体表示](docs/camera-ja.md)
 - [基本マテリアル](docs/materials-ja.md)
+- [テクスチャのミップマップ](docs/mipmaps-ja.md)
 - [平行光源とシャドウマップ](docs/shadows-ja.md)
 - [距離フォグと空・地面の環境光](docs/environment-ja.md)
 - [モデルのカスタムシェーダー](docs/custom-shaders-ja.md)

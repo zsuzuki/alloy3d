@@ -252,11 +252,32 @@ id<MTLTexture> LoadEmbeddedTexture(cgltf_material *material, id<MTLDevice> devic
   NSError *error = nil;
   NSDictionary *options = @{
     MTKTextureLoaderOptionSRGB : @YES,
+    MTKTextureLoaderOptionAllocateMipmaps : @YES,
   };
   id<MTLTexture> tex = [loader newTextureWithData:data options:options error:&error];
   if (tex == nil && error != nil)
   {
     NSLog(@"Failed to load embedded glTF texture: %@", error);
+  }
+  // Generate only when lower levels exist: the loader's GenerateMipmaps option
+  // submits an invalid blit for 1x1 images with Metal API Validation enabled.
+  // This synchronous load completes generation before any render queue uses it.
+  if (tex.mipmapLevelCount > 1)
+  {
+    auto queue    = [device newCommandQueue];
+    auto commands = [queue commandBuffer];
+    auto blit     = [commands blitCommandEncoder];
+    [blit generateMipmapsForTexture:tex];
+    [blit endEncoding];
+    [commands commit];
+    [commands waitUntilCompleted];
+    if (!blit || commands.status != MTLCommandBufferStatusCompleted)
+    {
+      NSLog(@"Failed to generate glTF texture mipmaps: %@", commands.error);
+      [tex release];
+      tex = nil;
+    }
+    [queue release];
   }
   [loader release];
   return tex;

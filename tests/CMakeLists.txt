@@ -77,6 +77,15 @@ add_test(NAME shadow_regression COMMAND alloy3d_shadow_regression
   ${CMAKE_SOURCE_DIR}/assets/tests/materials)
 set_tests_properties(shadow_regression PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
 
+add_executable(alloy3d_mipmap_regression mipmap_regression.mm)
+target_include_directories(alloy3d_mipmap_regression PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_mipmap_regression PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_mipmap_regression shaders)
+add_test(NAME mipmap_regression COMMAND alloy3d_mipmap_regression
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib
+  ${CMAKE_SOURCE_DIR}/assets/tests/mipmaps)
+set_tests_properties(mipmap_regression PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
+
 add_executable(alloy3d_environment_regression environment_regression.mm)
 target_include_directories(alloy3d_environment_regression PRIVATE ../functions/internal)
 target_link_libraries(alloy3d_environment_regression PRIVATE Alloy3D::application)
