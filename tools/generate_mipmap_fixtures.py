@@ -16,7 +16,7 @@ def generate(kind):
     json_size = struct.unpack_from('<I', source, 12)[0]
     doc = json.loads(source[20:20 + json_size])
     binary = bytearray(source[28 + json_size:])
-    width, height = {'checker': (1024, 1024), 'npot': (30, 18),
+    width, height = {'checker': (1024, 1024), 'anisotropic': (512, 512), 'npot': (30, 18),
                      'single': (1, 1), 'mask_dense': (64, 64),
                      'mask_sparse': (64, 64)}[kind]
     rows = bytearray()
@@ -25,6 +25,9 @@ def generate(kind):
         for x in range(width):
             if kind == 'checker':
                 v = 255 if (x + y) % 2 else 0
+                pixel = (v, v, v, 255)
+            elif kind == 'anisotropic':
+                v = 255 if (x // 4) % 2 else 0
                 pixel = (v, v, v, 255)
             elif kind.startswith('mask_'):
                 # 75% and 25% coverage; ordinary mipmaps average the alpha.
@@ -70,7 +73,7 @@ def main():
     root = Path(__file__).resolve().parents[1] / 'assets/tests/mipmaps'
     if not args.check:
         root.mkdir(parents=True, exist_ok=True)
-    for kind in ('checker', 'npot', 'single', 'mask_dense', 'mask_sparse'):
+    for kind in ('checker', 'npot', 'single', 'mask_dense', 'mask_sparse', 'anisotropic'):
         path, data = root / (kind + '.glb'), generate(kind)
         if args.check:
             if not path.exists() or path.read_bytes() != data:

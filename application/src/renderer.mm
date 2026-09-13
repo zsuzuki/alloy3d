@@ -294,6 +294,12 @@ public:
     return true;
   }
 
+  bool SetModelTextureSampling3D(const alloy3d::ModelTextureSampling3D &sampling) override
+  {
+    [draw3d_ setModelTextureSampling:sampling];
+    return true;
+  }
+
   void SetDirectionalLight3D(const alloy3d::DirectionalLight3D &light) override
   {
     [draw3d_ setDirectionalLight:light];

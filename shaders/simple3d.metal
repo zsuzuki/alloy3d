@@ -173,7 +173,8 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                            device const Uniforms          &cameraData [[buffer(1)]],
                            constant MaterialUniforms      &material [[buffer(5)]],
                            texture2d<half, access::sample> tex [[texture(0)]],
-                           depth2d<float>                  shadowMap [[texture(1)]]
+                           depth2d<float>                  shadowMap [[texture(1)]],
+                           sampler colorSampler [[sampler(0)]]
 #ifdef ALLOY3D_CUSTOM_SURFACE
                            ,
                            constant float4 &parameters [[buffer(6)]]
@@ -184,8 +185,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   const bool front = frontFacing != bool(in.mirrored);
   if (!front && material.parameters.z == 0)
     discard_fragment();
-  constexpr sampler s(address::repeat, filter::linear, mip_filter::linear);
-  half4             baseColor = in.color * tex.sample(s, in.texcoord).rgba;
+  half4             baseColor = in.color * tex.sample(colorSampler, in.texcoord).rgba;
   if (material.parameters.x == 1 && float(baseColor.a) < material.parameters.y)
     discard_fragment();
   if (material.parameters.x != 2)
@@ -276,14 +276,14 @@ fragment half4 textFrag3d(v2f in [[stage_in]], texture2d<half, access::sample> t
 // Same skinning, winding and MASK coverage as the color pass. No color attachment.
 fragment void shadowModelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]],
                                 constant MaterialUniforms      &material [[buffer(5)]],
-                                texture2d<half, access::sample> tex [[texture(0)]])
+                                texture2d<half, access::sample> tex [[texture(0)]],
+                                sampler colorSampler [[sampler(0)]])
 {
   if ((frontFacing == bool(in.mirrored)) && material.parameters.z == 0)
     discard_fragment();
   if (material.parameters.x == 1)
   {
-    constexpr sampler s(address::repeat, filter::linear, mip_filter::linear);
-    if (float(in.color.a * tex.sample(s, in.texcoord).a) < material.parameters.y)
+    if (float(in.color.a * tex.sample(colorSampler, in.texcoord).a) < material.parameters.y)
       discard_fragment();
   }
 }

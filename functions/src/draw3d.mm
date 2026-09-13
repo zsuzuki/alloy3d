@@ -58,6 +58,7 @@ struct DrawModel3D
   simd_float4                       parameters{};
   alloy3d::ModelHighlight3D         highlight;
   alloy3d::ModelTextureTransform3D textureTransform;
+  uint32_t maxAnisotropy = 1;
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -74,7 +75,8 @@ struct DrawModel3D
       : model(std::exchange(other.model, nil)), position(other.position), rotation(other.rotation),
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
-        textureTransform(other.textureTransform), instanceOffset(other.instanceOffset),
+        textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy),
+        instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
   }
@@ -197,6 +199,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   simd_float4                       shaderParameters_;
   alloy3d::ModelHighlight3D         modelHighlight_;
   alloy3d::ModelTextureTransform3D modelTextureTransform_;
+  alloy3d::ModelTextureSampling3D modelTextureSampling_;
+  id<MTLSamplerState> modelSamplers_[17]; // Bounded lazy cache, index 1..16.
 
   SimpleLock primLock_;
   SimpleLock planeLock_;
@@ -400,6 +404,31 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   modelTextureTransform_ = transform;
 }
 
+- (id<MTLSamplerState>)modelSampler:(uint32_t)anisotropy
+{
+  if (!modelSamplers_[anisotropy])
+  {
+    auto desc = [[MTLSamplerDescriptor alloc] init];
+    desc.minFilter = desc.magFilter = MTLSamplerMinMagFilterLinear;
+    desc.mipFilter = MTLSamplerMipFilterLinear;
+    desc.sAddressMode = desc.tAddressMode = desc.rAddressMode = MTLSamplerAddressModeRepeat;
+    desc.maxAnisotropy = anisotropy;
+    auto sampler = [device_ newSamplerStateWithDescriptor:desc];
+    [desc release];
+    if (!sampler) throw std::bad_alloc();
+    modelSamplers_[anisotropy] = sampler;
+  }
+  return modelSamplers_[anisotropy];
+}
+
+- (void)setModelTextureSampling:(const alloy3d::ModelTextureSampling3D &)sampling
+{
+  if (sampling.maxAnisotropy < 1 || sampling.maxAnisotropy > 16)
+    throw std::invalid_argument("Alloy3D anisotropy must be in [1,16]");
+  [self modelSampler:sampling.maxAnisotropy];
+  modelTextureSampling_ = sampling;
+}
+
 - (void)setModelHighlight:(const alloy3d::ModelHighlight3D &)highlight
 {
   if (!std::isfinite(highlight.strength) || highlight.strength < 0 || highlight.strength > 1 ||
@@ -440,6 +469,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   colorFormat_      = view.colorPixelFormat;
   depthFormat_      = view.depthStencilPixelFormat;
   sampleCount_      = view.sampleCount;
+  [self modelSampler:1];
   contentScale_     = [[NSScreen mainScreen] backingScaleFactor];
   pageIndex_        = 0;
   nbPrimitives_     = 0;
@@ -467,6 +497,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
 //
 - (void)dealloc
 {
+  for (auto sampler : modelSamplers_) [sampler release];
   for (int i = 0; i < 3; i++)
   {
     [uniformBuffer_[i] release];
@@ -1079,6 +1110,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     {
       if (part.alphaMode == 2)
         continue;
+      [encoder setFragmentSamplerState:[self modelSampler:draw.maxAnisotropy] atIndex:0];
       MaterialUniforms material{
           {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)},
           {}, simd_make_float4(draw.textureTransform.scale, draw.textureTransform.offset)};
@@ -1121,6 +1153,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   drawModelList_.back().parameters = shaderParameters_;
   drawModelList_.back().highlight = modelHighlight_;
   drawModelList_.back().textureTransform = modelTextureTransform_;
+  drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
 }
 
 - (void)drawModelInstances:(MetalModel *)model
@@ -1149,6 +1182,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       drawModelList_.back().parameters = shaderParameters_;
       drawModelList_.back().highlight = modelHighlight_;
       drawModelList_.back().textureTransform = modelTextureTransform_;
+      drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
     }
     return;
   }
@@ -1161,6 +1195,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     drawModelList_.back().parameters = shaderParameters_;
     drawModelList_.back().highlight = modelHighlight_;
     drawModelList_.back().textureTransform = modelTextureTransform_;
+    drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
   }
   catch (...)
   {
@@ -1247,6 +1282,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
 
       auto drawPart = [&](const DrawModel3D &dmodel, ModelPart *part, bool blend)
       {
+        [renderEncoder setFragmentSamplerState:[self modelSampler:dmodel.maxAnisotropy] atIndex:0];
         const bool instanced = dmodel.instanceCount != 0;
         auto       pipeline =
             dmodel.shader ? dmodel.shader->pipelines[instanced ? 2 : int(blend)]

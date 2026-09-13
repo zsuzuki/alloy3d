@@ -32,6 +32,9 @@ int main(int argc, char **argv)
         NSUInteger samples = samplesEnv ? std::strtoul(samplesEnv, nullptr, 10) : 1;
         Check(samples == 1 || samples == 2 || samples == 4 || samples == 8, "invalid forest samples");
         Harness h(device, argv[1], 1000, samples);
+        const char *anisotropyEnv = std::getenv("ALLOY3D_FOREST_ANISOTROPY");
+        uint32_t anisotropy = anisotropyEnv ? std::strtoul(anisotropyEnv, nullptr, 10) : 8;
+        [h.draw setModelTextureSampling:(alloy3d::ModelTextureSampling3D{anisotropy})];
         h.clearColor =
             MTLClearColorMake(forest::SkyColor.x, forest::SkyColor.y, forest::SkyColor.z, 1);
         forest::Scene       scene;
