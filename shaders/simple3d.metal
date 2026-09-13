@@ -289,15 +289,29 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   if (!front)
     n = -n;
   float3 l       = normalize(-cameraData.lightDirectionAndAmbient.xyz);
-  half3 ambientColor = EnvironmentAmbient(n, cameraData);
+  half3 emissive = half3(0);
+  bool modifiedRoughness = false;
   float roughness = 1, occlusion = 1;
   if (material.surfaceDetail.x != 0 && !unlit)
   {
     uint flags = uint(material.surfaceDetail.w);
     roughness = saturate(material.surfaceDetail.y * ((flags & 1) ? float(roughnessMap.sample(colorSampler, in.texcoord).g) : 1.f));
     if (flags & 2) occlusion = mix(1.f, float(occlusionMap.sample(colorSampler, in.texcoord).r), material.surfaceDetail.z);
-    ambientColor *= half(occlusion);
+
   }
+#ifdef ALLOY3D_CUSTOM_MATERIAL
+  ModelMaterial input{float3(baseColor.rgb),n,roughness,occlusion,float3(0)};
+  ModelMaterialContext context{in.texcoord,in.viewPosition,
+      material.highlight.z != 0 ? UnitModelNormal(-in.viewPosition) : float3(0,0,1),unlit};
+  ModelMaterial result = alloy3dMaterial(input,context,parameters);
+  // Invalid user output falls back per channel; a bad normal does not poison the frame.
+  if (all(isfinite(result.baseColor))) baseColor.rgb = half3(clamp(result.baseColor,0.f,64.f));
+  if (any(result.normal != n) && all(isfinite(result.normal)) && dot(result.normal,result.normal) > 1e-8f) n = UnitModelNormal(result.normal);
+  if (isfinite(result.roughness)) { modifiedRoughness = result.roughness != roughness; roughness = saturate(result.roughness); }
+  if (isfinite(result.occlusion)) occlusion = saturate(result.occlusion);
+  if (all(isfinite(result.emissive))) emissive = half3(clamp(result.emissive,0.f,64.f));
+#endif
+  half3 ambientColor = EnvironmentAmbient(n, cameraData) * half(occlusion);
   half   diffuse = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
   half   shadow =
       unlit ? half(1) : ShadowVisibility(in.shadowPosition, cameraData.shadowParameters, shadowMap);
@@ -325,7 +339,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
     if (dot(n, v) > 0 && h2 > 1e-8f)
     {
       float nh = saturate(dot(n, sum * rsqrt(h2)));
-      float exponent = material.surfaceDetail.x != 0 ? clamp(2.f / max(roughness * roughness, .015f) - 2.f, 1.f, 128.f)
+      float exponent = material.surfaceDetail.x != 0 || modifiedRoughness ? clamp(2.f / max(roughness * roughness, .015f) - 2.f, 1.f, 128.f)
                                                      : material.highlight.y;
       float specular = material.highlight.x * pow(nh, exponent) *
                        saturate(cameraData.lightColorAndDiffuse.w) * float(shadow);
@@ -333,6 +347,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
       litColor += specularColor;
     }
   }
+  litColor += emissive;
 #ifdef ALLOY3D_CUSTOM_SURFACE
   half ambient = half(saturate(cameraData.lightDirectionAndAmbient.w));
   ModelSurface surface{float3(baseColor.rgb),

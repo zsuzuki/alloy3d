@@ -24,3 +24,20 @@ struct ModelSurface
   float occlusion; // sampled ambient occlusion when detail is enabled, otherwise 1
   float3 transmissionColor; // thin-surface backlighting, already included in litColor
 };
+
+// Optional inputs edited before lighting. Alpha mode, shadow casting and depth are unchanged.
+struct ModelMaterial
+{
+  float3 baseColor;
+  float3 normal; // View-space, back-face corrected. Renormalized after the hook.
+  float roughness;
+  float occlusion;
+  float3 emissive;
+};
+struct ModelMaterialContext
+{
+  float2 texcoord;
+  float3 viewPosition;
+  float3 viewDirection;
+  bool unlit;
+};

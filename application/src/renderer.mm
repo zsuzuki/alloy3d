@@ -278,6 +278,10 @@ public:
   {
     return [draw3d_ createModelShader:source diagnostics:diagnostics];
   }
+  alloy3d::ModelShaderPtr CreateModelMaterialShader(std::string_view source, std::string &diagnostics) override
+  {
+    return [draw3d_ createModelMaterialShader:source diagnostics:diagnostics];
+  }
   bool SetModelShader(alloy3d::ModelShaderPtr shader, simd_float4 parameters) override
   {
     return [draw3d_ setModelShader:std::move(shader) parameters:parameters];

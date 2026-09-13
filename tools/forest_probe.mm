@@ -79,7 +79,7 @@ int main(int argc, char **argv)
         Check(bool(ground), error.c_str());
         auto leaf = [h.draw createModelShader:forest::LeafShader diagnostics:error];
         Check(bool(leaf), error.c_str());
-        auto water = [h.draw createModelShader:forest::WaterShader diagnostics:error];
+        auto water = [h.draw createModelMaterialShader:forest::WaterShader diagnostics:error];
         Check(bool(water), error.c_str());
         [h.draw setDirectionalLight:scene.Light()];
         [h.draw setHemisphereLight:scene.Ambient()];
@@ -135,7 +135,8 @@ int main(int argc, char **argv)
                                                           0,
                                                           0})];
                       [h.draw setModelHighlight:(alloy3d::ModelHighlight3D{
-                                                    asset == forest::Rock     ? .20f
+                                                    asset == forest::Water    ? .9f
+                                                    : asset == forest::Rock     ? .20f
                                                     : asset == forest::Ground ? .10f
                                                                               : .035f,
                                                     48})];

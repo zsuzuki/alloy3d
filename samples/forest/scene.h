@@ -102,39 +102,29 @@ float3 alloy3dShade(ModelSurface s, float4 p)
 )metal";
 
 inline constexpr const char *WaterShader = R"metal(
-float3 alloy3dShade(ModelSurface s, float4 p)
+ModelMaterial alloy3dMaterial(ModelMaterial m, ModelMaterialContext c, float4 p)
 {
-  float2 uv = s.texcoord;
-  // UVs follow the river bends. Derivatives put ripple slopes into view space.
-  float3 dx=dfdx(s.viewPosition), dy=dfdy(s.viewPosition);
-  float2 tx=dfdx(uv), ty=dfdy(uv);
+  float2 uv=c.texcoord;
+  float3 dx=dfdx(c.viewPosition),dy=dfdy(c.viewPosition);
+  float2 tx=dfdx(uv),ty=dfdy(uv);
   float det=tx.x*ty.y-tx.y*ty.x;
-  float3 n=s.normal;
-  if (abs(det)>1e-10)
+  if(abs(det)>1e-10)
   {
     float3 tangent=normalize((dx*ty.y-dy*tx.y)/det);
     float3 bitangent=normalize((dy*tx.x-dx*ty.x)/det);
     float a=6.2831853*(uv.x*7+uv.y*3);
     float b=6.2831853*(uv.x*3-uv.y*5)+p.x*.31;
-    // The library's normal map supplies detail independently of reflected color.
-    float sx=.015*cos(a);
-    float sy=.010*cos(b);
-    n=normalize(n-tangent*sx-bitangent*sy);
+    m.normal=normalize(m.normal-tangent*(.015*cos(a))-bitangent*(.010*cos(b)));
   }
-  float facing=saturate(dot(n,s.viewDirection));
-  float fresnel=.025+.72*pow(1-facing,5.0);
-  float pattern=dot(s.baseColor,float3(.2126,.7152,.0722));
+  float fresnel=.025+.72*pow(1-saturate(dot(m.normal,c.viewDirection)),5.0);
+  float pattern=dot(m.baseColor,float3(.2126,.7152,.0722));
   float3 bed=mix(float3(.055,.105,.075),float3(.12,.22,.17),saturate(pattern*2));
   float3 reflection=float3(.30,.48,.56);
-  float3 color=mix(s.baseColor*.90+bed*.10,reflection,fresnel*.65);
-  float3 halfway=s.lightDirection+s.viewDirection;
-  float h2=dot(halfway,halfway);
-  float glint=h2>1e-8 ? pow(saturate(dot(n,halfway*rsqrt(h2))),100.0) : 0;
-  // Broken pale streaks carried downstream by the same UV transform as the texture.
-  float crest=smoothstep(.20,.50,pattern)*.07;
-  float light=.50+.50*s.shadow;
-  return color*light + float3(.48,.65,.59)*crest*light
-      + s.lightColor*glint*s.lightIntensity*s.shadow*.9;
+  m.baseColor=mix(m.baseColor*.90+bed*.10,reflection,fresnel*.65)*.72;
+  m.roughness=.14;
+  m.emissive=reflection*fresnel*.06+float3(.48,.65,.59)*smoothstep(.20,.50,pattern)*.02;
+  // Normal, roughness and base color now feed the library's shared lighting/shadow path.
+  return m;
 }
 )metal";
 

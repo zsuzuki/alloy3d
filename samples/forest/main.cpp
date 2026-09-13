@@ -57,7 +57,7 @@ public:
     leafShader_ = ctx.CreateModelShader(forest::LeafShader, error);
     if (!leafShader_)
       std::cerr << "Forest leaf shader: " << error << '\n';
-    waterShader_ = ctx.CreateModelShader(forest::WaterShader, error);
+    waterShader_ = ctx.CreateModelMaterialShader(forest::WaterShader, error);
     if (!waterShader_)
       std::cerr << "Forest water shader: " << error << '\n';
     // Keep one font size so the host can retain the text bitmap cache.
@@ -169,7 +169,8 @@ public:
                               scene_.settings.shafts ? 1.f : 0.f,
                               0,
                               0});
-          ctx.SetModelHighlight3D({asset == forest::Rock     ? .20f
+          ctx.SetModelHighlight3D({asset == forest::Water    ? .9f
+                                     : asset == forest::Rock     ? .20f
                                    : asset == forest::Ground ? .10f
                                                              : .035f,
                                    48});

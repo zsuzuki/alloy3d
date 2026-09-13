@@ -378,6 +378,16 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 - (alloy3d::ModelShaderPtr)createModelShader:(std::string_view)source
                                  diagnostics:(std::string &)diagnostics
 {
+  return [self createModelShader:source materialStage:false diagnostics:diagnostics];
+}
+
+- (alloy3d::ModelShaderPtr)createModelMaterialShader:(std::string_view)source diagnostics:(std::string &)diagnostics
+{
+  return [self createModelShader:source materialStage:true diagnostics:diagnostics];
+}
+
+- (alloy3d::ModelShaderPtr)createModelShader:(std::string_view)source materialStage:(bool)materialStage diagnostics:(std::string &)diagnostics
+{
   diagnostics.clear();
   if (source.empty() || source.find('\0') != std::string_view::npos)
   {
@@ -387,9 +397,11 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   @autoreleasepool
   {
     std::string combined = "#include <metal_stdlib>\n#define ALLOY3D_CUSTOM_SURFACE 1\n";
+    if (materialStage) combined += "#define ALLOY3D_CUSTOM_MATERIAL 1\n";
     combined += ModelShaderPrefix;
     combined += "\n#line 1 \"model_surface_user.metal\"\n";
     combined.append(source);
+    if (materialStage) combined += "\nfloat3 alloy3dShade(ModelSurface s,float4 p){return s.litColor;}\n";
     combined += "\n#line 1 \"simple3d.metal\"\n";
     combined += ModelShaderBody;
     auto text = [[[NSString alloc] initWithBytes:combined.data()

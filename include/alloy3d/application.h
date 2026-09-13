@@ -84,6 +84,13 @@ public:
     diagnostics = "Model surface shaders are unsupported by this context";
     return {};
   }
+  // Source defines ModelMaterial alloy3dMaterial(ModelMaterial m, ModelMaterialContext c, float4 p).
+  // Edits material inputs before the library's lighting, shadows and fog.
+  virtual ModelShaderPtr CreateModelMaterialShader(std::string_view source, std::string &diagnostics)
+  {
+    diagnostics = "Model material shaders are unsupported by this context";
+    return {};
+  }
   // Persistent model draw state; handle and parameters are copied at submission.
   // Null restores built-in shading. Returns false for foreign/unsupported shaders
   // or non-finite parameters, leaving the previous state intact.
