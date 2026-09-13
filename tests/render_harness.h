@@ -145,6 +145,7 @@ struct Harness
     if(post)
     {
       [encoder endEncoding];
+      post->prepare(commands[slot],slot);
       encoder=[commands[slot] renderCommandEncoderWithDescriptor:pass];
       post->encode(encoder,slot);
     }

@@ -689,6 +689,7 @@ public:
     if(post_)
     {
       [renderEncoder endEncoding];
+      post_->prepare(commandBuffer,postPage_);
       renderEncoder=[commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
       if(!renderEncoder){[draw2d_ discardFrame];[commandBuffer commit];postPage_=(postPage_+1)%3;return;}
       post_->encode(renderEncoder,postPage_);

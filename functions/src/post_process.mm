@@ -20,16 +20,20 @@ PostProcess::PostProcess(id<MTLDevice> device,id<MTLLibrary> library,MTLPixelFor
   auto depth=[[[MTLDepthStencilDescriptor alloc] init] autorelease];
   depth.depthCompareFunction=MTLCompareFunctionAlways;depth.depthWriteEnabled=NO;
   depthState_=[device newDepthStencilStateWithDescriptor:depth];
+  library_=[library retain];
 }
 PostProcess::~PostProcess()
 {
-  for(auto &page:pages_){[page.color release];[page.multisample release];}
-  [pipeline_ release];[depthState_ release];
+  for(auto &page:pages_){[page.color release];[page.multisample release];[page.bloom release];[page.bloomScratch release];}
+  [pipeline_ release];[depthState_ release];[library_ release];[bloomExtract_ release];[bloomBlur_ release];
 }
 void PostProcess::set(const PostProcessing3D &settings)
 {
   if(!std::isfinite(settings.exposure) || settings.exposure<0 || settings.exposure>16 ||
-     int(settings.toneMapping)<0 || int(settings.toneMapping)>2)
+     int(settings.toneMapping)<0 || int(settings.toneMapping)>2 ||
+     !std::isfinite(settings.bloom.strength) || settings.bloom.strength<0 || settings.bloom.strength>4 ||
+     !std::isfinite(settings.bloom.threshold) || settings.bloom.threshold<0 || settings.bloom.threshold>64 ||
+     !std::isfinite(settings.bloom.radius) || settings.bloom.radius<1 || settings.bloom.radius>32)
     throw std::invalid_argument("Alloy3D post processing requires exposure in [0,16] and a valid tone mapper");
   settings_=settings;
 }
@@ -55,6 +59,7 @@ MTLRenderPassDescriptor *PostProcess::begin(MTLRenderPassDescriptor *output,NSUI
       if(!multisample){[color release];throw std::bad_alloc();}
     }
     [page.color release];[page.multisample release];
+    [page.bloom release];[page.bloomScratch release];page.bloom=page.bloomScratch=nil;
     page.color=color;page.multisample=multisample;page.releasePending=false;
   }
   MTLRenderPassDescriptor *pass=[[output copy] autorelease];
@@ -65,20 +70,54 @@ MTLRenderPassDescriptor *PostProcess::begin(MTLRenderPassDescriptor *output,NSUI
   color.storeAction=page.multisample ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
   return pass;
 }
+void PostProcess::prepare(id<MTLCommandBuffer> commands,NSUInteger index)
+{
+  if(settings_.bloom.strength<=0)return;
+  auto &page=pages_.at(index);
+  if(!bloomExtract_)
+  {
+    NSError *error=nil;
+    auto extract=[device_ newComputePipelineStateWithFunction:[[library_ newFunctionWithName:@"bloomExtract"] autorelease] error:&error];
+    auto blur=[device_ newComputePipelineStateWithFunction:[[library_ newFunctionWithName:@"bloomBlur"] autorelease] error:&error];
+    if(!extract || !blur){[extract release];[blur release];throw std::runtime_error("Bloom pipeline creation failed");}
+    bloomExtract_=extract;bloomBlur_=blur;
+  }
+  if(!page.bloom)
+  {
+    auto desc=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
+        width:(page.color.width+1)/2 height:(page.color.height+1)/2 mipmapped:NO];
+    desc.storageMode=MTLStorageModePrivate;desc.usage=MTLTextureUsageShaderRead|MTLTextureUsageShaderWrite;
+    auto bloom=[device_ newTextureWithDescriptor:desc],scratch=[device_ newTextureWithDescriptor:desc];
+    if(!bloom || !scratch){[bloom release];[scratch release];throw std::bad_alloc();}
+    page.bloom=bloom;page.bloomScratch=scratch;
+  }
+  auto dispatch=[&](id<MTLComputePipelineState> pipeline,id<MTLTexture> input,id<MTLTexture> output,simd_float4 parameters)
+  {
+    auto encoder=[commands computeCommandEncoder];encoder.label=@"Alloy3D bloom";
+    [encoder setComputePipelineState:pipeline];[encoder setTexture:input atIndex:0];[encoder setTexture:output atIndex:1];
+    [encoder setBytes:&parameters length:sizeof(parameters) atIndex:0];
+    [encoder dispatchThreads:MTLSizeMake(output.width,output.height,1) threadsPerThreadgroup:MTLSizeMake(8,8,1)];
+    [encoder endEncoding];
+  };
+  dispatch(bloomExtract_,page.color,page.bloom,simd_float4{settings_.bloom.threshold,0,0,0});
+  dispatch(bloomBlur_,page.bloom,page.bloomScratch,simd_float4{settings_.bloom.radius,1,0,0});
+  dispatch(bloomBlur_,page.bloomScratch,page.bloom,simd_float4{settings_.bloom.radius,0,1,0});
+}
 void PostProcess::encode(id<MTLRenderCommandEncoder> encoder,NSUInteger page)
 {
-  simd_float4 parameters={settings_.exposure,float(settings_.toneMapping),0,0};
+  simd_float4 parameters={settings_.exposure,float(settings_.toneMapping),settings_.bloom.strength,0};
   [encoder setRenderPipelineState:pipeline_];
   [encoder setDepthStencilState:depthState_];
   [encoder setCullMode:MTLCullModeNone];
   [encoder setFragmentTexture:pages_.at(page).color atIndex:0];
+  [encoder setFragmentTexture:settings_.bloom.strength>0 ? pages_.at(page).bloom : pages_.at(page).color atIndex:1];
   [encoder setFragmentBytes:&parameters length:sizeof(parameters) atIndex:0];
   [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
 }
 void PostProcess::releaseUnusedMemory(){for(auto &page:pages_)page.releasePending=true;}
 size_t PostProcess::bytes() const
 {
-  size_t total=0;for(const auto &page:pages_)total+=page.color.allocatedSize+page.multisample.allocatedSize;
+  size_t total=0;for(const auto &page:pages_)total+=page.color.allocatedSize+page.multisample.allocatedSize+page.bloom.allocatedSize+page.bloomScratch.allocatedSize;
   return total;
 }
 bool PostProcess::releasePending() const

@@ -92,6 +92,7 @@ public:
           case Key::N: s.normalMaps = !s.normalMaps; break;
           case Key::M: s.materialDetail = !s.materialDetail; break;
           case Key::T: s.transmission = !s.transmission; break;
+          case Key::L: s.bloom = !s.bloom; break;
           case Key::O: s.toneMapping = !s.toneMapping; break;
           case Key::K: s.softShadows = !s.softShadows; environmentDirty_ = true; break;
           case Key::J: s.heightFog = !s.heightFog; environmentDirty_ = true; break;

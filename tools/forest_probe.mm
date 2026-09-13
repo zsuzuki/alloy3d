@@ -160,6 +160,10 @@ int main(int argc, char **argv)
           return true;
         };
         auto first = render(0);
+        scene.settings.bloom = false;
+        Check(!imagesMatch(first,render(0)), "bloom did not affect forest");
+        scene.settings.bloom = true;
+        Check(imagesMatch(first,render(0)), "bloom toggle did not restore forest");
         scene.settings.toneMapping = false;
         Check(!imagesMatch(first,render(0)), "tone mapping did not affect forest");
         scene.settings.toneMapping = true;
