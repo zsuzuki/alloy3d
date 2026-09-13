@@ -31,7 +31,7 @@ int main(int argc, char **argv)
         const char *samplesEnv = std::getenv("ALLOY3D_FOREST_SAMPLES");
         NSUInteger samples = samplesEnv ? std::strtoul(samplesEnv, nullptr, 10) : 1;
         Check(samples == 1 || samples == 2 || samples == 4 || samples == 8, "invalid forest samples");
-        Harness h(device, argv[1], 1000, samples, true);
+        Harness h(device, argv[1], 1000, samples, true, true);
         [h.draw setTransparentBatching:true];
         [h.draw setFrustumCulling:true];
         const char *anisotropyEnv = std::getenv("ALLOY3D_FOREST_ANISOTROPY");
@@ -122,6 +122,7 @@ int main(int argc, char **argv)
                       if (dropsOnly && asset != forest::Droplet)
                         return;
                       [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{true,scene.CastShadow(asset)})];
+                      [h.draw setModelSoftParticles:scene.SoftParticles(asset)];
                       [h.draw setModelWind:scene.Wind(asset)];
                       [h.draw setModelTextureTransform:scene.TextureTransform(asset)];
                       [h.draw setModelTransmission:(alloy3d::ModelTransmission3D{scene.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
@@ -146,6 +147,7 @@ int main(int argc, char **argv)
                     });
                 if(!waterOnly && !dropsOnly)
                 {
+                  [h.draw setModelSoftParticles:0];
                   [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{false,true})];
                   [h.draw setModelShader:{} parameters:{}];[h.draw setModelTextureTransform:alloy3d::ModelTextureTransform3D{}];
                   scene.DrawShadowProxies([&](size_t asset,auto instances){

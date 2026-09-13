@@ -10,5 +10,7 @@ struct RenderOptions
   uint32_t sampleCount = 1;
   // Optional linear RGBA16Float scene target, tone mapped before the 2D overlay.
   bool hdr = false;
+  // Opaque color/depth snapshots for soft particles and screen-space surfaces; requires HDR.
+  bool sceneEffects = false;
 };
 } // namespace alloy3d

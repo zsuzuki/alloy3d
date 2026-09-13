@@ -337,6 +337,11 @@ public:
     if(!post_)return false;
     post_->set(settings);return true;
   }
+  bool SetModelSoftParticles3D(float distance) override
+  {
+    if(!post_ || !post_->sceneEffects())return false;
+    [draw3d_ setModelSoftParticles:distance];return true;
+  }
   bool SetModelVisibility3D(const alloy3d::ModelVisibility3D &visibility) override
   {
     [draw3d_ setModelVisibility:visibility];return true;
@@ -605,7 +610,7 @@ public:
     draw2d_        = [[Draw2D alloc] initWithMetalKitView:view shaderlib:shaderLibrary_];
     draw3d_ = [[Draw3D alloc] initWithMetalKitView:view shaderlib:shaderLibrary_
         colorFormat:options.hdr ? MTLPixelFormatRGBA16Float : view.colorPixelFormat];
-    if(options.hdr)post_=std::make_unique<alloy3d::metal::PostProcess>(device_,shaderLibrary_,view.colorPixelFormat,view.depthStencilPixelFormat,view.sampleCount);
+    if(options.hdr)post_=std::make_unique<alloy3d::metal::PostProcess>(device_,shaderLibrary_,view.colorPixelFormat,view.depthStencilPixelFormat,view.sampleCount,options.sceneEffects);
 
     //
 
@@ -688,7 +693,15 @@ public:
     [renderEncoder setDepthStencilState:depthState_];
 
     // 3D Graphics
-    [draw3d_ render:renderEncoder camera:&camera_];
+    const bool split=post_ && post_->sceneEffects();
+    [draw3d_ render:renderEncoder camera:&camera_ phase:split ? ScenePhase::Opaque : ScenePhase::All];
+    if(split)
+    {
+      [renderEncoder endEncoding];post_->captureScene(commandBuffer,postPage_,camera_);
+      [draw3d_ setSceneColor:post_->sceneColor(postPage_) depth:post_->sceneDepth(postPage_)];
+      renderEncoder=[commandBuffer renderCommandEncoderWithDescriptor:post_->transparentPass(renderPassDescriptor,postPage_)];
+      [draw3d_ render:renderEncoder camera:&camera_ phase:ScenePhase::Transparent];
+    }
 
     if(post_)
     {

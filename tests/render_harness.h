@@ -40,7 +40,7 @@ struct Harness
   MTLClearColor            clearColor = MTLClearColorMake(0, 0, 0, 0);
 
   Harness(id<MTLDevice> d, const char *shader, NSUInteger dimension = 256,
-          NSUInteger samples = 1, bool hdr = false) : device(d), size(dimension)
+          NSUInteger samples = 1, bool hdr = false, bool sceneEffects = false) : device(d), size(dimension)
   {
     NSError *error = nil;
     library = [d newLibraryWithURL:[NSURL fileURLWithPath:[NSString stringWithUTF8String:shader]]
@@ -52,7 +52,7 @@ struct Harness
     Check([d supportsTextureSampleCount:samples], "unsupported harness sample count");
     view.sampleCount             = samples;
     draw = [[Draw3D alloc] initWithMetalKitView:view shaderlib:library colorFormat:hdr ? MTLPixelFormatRGBA16Float : view.colorPixelFormat];
-    if(hdr)post=std::make_unique<alloy3d::metal::PostProcess>(d,library,view.colorPixelFormat,view.depthStencilPixelFormat,samples);
+    if(hdr)post=std::make_unique<alloy3d::metal::PostProcess>(d,library,view.colorPixelFormat,view.depthStencilPixelFormat,samples,sceneEffects);
     queue                        = [d newCommandQueue];
     auto desc  = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:view.colorPixelFormat
                                                                     width:size
@@ -141,7 +141,15 @@ struct Harness
     auto scenePass=post ? post->begin(pass,slot) : pass;
     auto encoder = [commands[slot] renderCommandEncoderWithDescriptor:scenePass];
     [encoder setDepthStencilState:depthState];
-    [draw render:encoder camera:&camera];
+    const bool split=post && post->sceneEffects();
+    [draw render:encoder camera:&camera phase:split ? ScenePhase::Opaque : ScenePhase::All];
+    if(split)
+    {
+      [encoder endEncoding];post->captureScene(commands[slot],slot,camera);
+      [draw setSceneColor:post->sceneColor(slot) depth:post->sceneDepth(slot)];
+      encoder=[commands[slot] renderCommandEncoderWithDescriptor:post->transparentPass(pass,slot)];
+      [draw render:encoder camera:&camera phase:ScenePhase::Transparent];
+    }
     if(post)
     {
       [encoder endEncoding];

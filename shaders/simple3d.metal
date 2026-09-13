@@ -127,7 +127,7 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   // Custom surfaces need view position even with highlights disabled or unlit materials.
 #ifndef ALLOY3D_CUSTOM_SURFACE
   if ((material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0) ||
-      material.normalMapping.x != 0 || material.transmission.w > 0 || cameraData.heightFogColorDensity.w > 0)
+      material.normalMapping.x != 0 || material.transmission.w > 0 || material.softDistance > 0 || cameraData.heightFogColorDensity.w > 0)
 #endif
     o.viewPosition = (cameraData.worldTransform * position).xyz;
   o.normal     = UnitModelNormal(cameraData.worldNormalTransform * normal);
@@ -167,7 +167,7 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   // Custom surfaces need view position even with highlights disabled or unlit materials.
 #ifndef ALLOY3D_CUSTOM_SURFACE
   if ((material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0) ||
-      material.normalMapping.x != 0 || material.transmission.w > 0 || cameraData.heightFogColorDensity.w > 0)
+      material.normalMapping.x != 0 || material.transmission.w > 0 || material.softDistance > 0 || cameraData.heightFogColorDensity.w > 0)
 #endif
     o.viewPosition = (instance.modelView * position).xyz;
   o.normal     = UnitModelNormal(instance.normalTransform * normal);
@@ -227,7 +227,9 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                            sampler colorSampler [[sampler(0)]],
                            texture2d<half> normalMap [[texture(2)]],
                            texture2d<half> roughnessMap [[texture(3)]],
-                           texture2d<half> occlusionMap [[texture(4)]]
+                           texture2d<half> occlusionMap [[texture(4)]],
+                           texture2d<half> sceneColor [[texture(5)]],
+                           texture2d<float> sceneDepth [[texture(6)]]
 #ifdef ALLOY3D_CUSTOM_SURFACE
                            ,
                            constant float4 &parameters [[buffer(6)]]
@@ -254,6 +256,12 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   if (material.parameters.x != 2) baseColor.a = half(maskCoverage);
   // Placement alpha is an explicit application fade, applied after glTF alpha rules.
   baseColor *= half4(in.modelColor);
+  if(material.softDistance>0 && cameraData.sceneParameters.x>0)
+  {
+    constexpr sampler depthSampler(coord::normalized,address::clamp_to_edge,filter::nearest);
+    float opaqueDepth=sceneDepth.sample(depthSampler,in.position.xy*cameraData.sceneParameters.yz).r;
+    baseColor.a*=half(saturate((opaqueDepth-in.viewPosition.z*cameraData.sceneParameters.w)/material.softDistance));
+  }
   float normalLength = length(in.normal);
   bool  unlit        = material.parameters.w != 0 || normalLength < 0.001;
 #ifndef ALLOY3D_CUSTOM_SURFACE

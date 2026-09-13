@@ -21,8 +21,13 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
   DrawText3DAlignRightBottom,
 };
 
+enum class ScenePhase { All, Opaque, Transparent };
+
 @interface Draw3D : NSObject
 - (alloy3d::ModelShaderPtr)createModelMaterialShader:(std::string_view)source diagnostics:(std::string &)diagnostics;
+- (void)setModelSoftParticles:(float)distance;
+- (void)setSceneColor:(nullable id<MTLTexture>)color depth:(nullable id<MTLTexture>)depth;
+- (void)render:(nullable id<MTLRenderCommandEncoder>)encoder camera:(nonnull alloy3d::CameraData *)camera phase:(ScenePhase)phase;
 - (void)setModelVisibility:(const alloy3d::ModelVisibility3D &)visibility;
 - (void)setModelWind:(const alloy3d::ModelWind3D &)wind;
 - (void)setModelCoverage:(simd_float2)interval;

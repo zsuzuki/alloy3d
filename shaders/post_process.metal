@@ -48,3 +48,25 @@ kernel void bloomBlur(texture2d<half,access::sample> input [[texture(0)]],
   for(int i=1;i<=4;++i)color+=(float3(input.sample(s,uv+step*float(i)).rgb)+float3(input.sample(s,uv-step*float(i)).rgb))*weights[i];
   output.write(half4(half3(color),0),id);
 }
+
+struct SceneDepthUniforms { float4x4 inverseProjection;float4 parameters; };
+inline float LinearSceneDepth(float depth,uint2 p,uint2 size,constant SceneDepthUniforms &u)
+{
+  if(depth>=1)return 1e6f;
+  float2 uv=(float2(p)+.5f)/float2(size);
+  float4 view=u.inverseProjection*float4(uv.x*2-1,1-uv.y*2,depth,1);
+  return view.z/view.w*u.parameters.x;
+}
+kernel void resolveSceneDepth(depth2d<float,access::read> source [[texture(0)]],
+    texture2d<float,access::write> target [[texture(1)]],constant SceneDepthUniforms &u [[buffer(0)]],uint2 p [[thread_position_in_grid]])
+{
+  uint2 size(target.get_width(),target.get_height());if(any(p>=size))return;
+  target.write(float4(LinearSceneDepth(source.read(p),p,size,u)),p);
+}
+kernel void resolveSceneDepthMS(depth2d_ms<float,access::read> source [[texture(0)]],
+    texture2d<float,access::write> target [[texture(1)]],constant SceneDepthUniforms &u [[buffer(0)]],uint2 p [[thread_position_in_grid]])
+{
+  uint2 size(target.get_width(),target.get_height());if(any(p>=size))return;
+  float d=1;for(uint i=0;i<source.get_num_samples();++i)d=min(d,source.read(p,i));
+  target.write(float4(LinearSceneDepth(d,p,size,u)),p);
+}

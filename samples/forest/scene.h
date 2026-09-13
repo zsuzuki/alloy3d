@@ -169,7 +169,7 @@ struct Settings
 {
   bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
        flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true,
-       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true, shadowLod = true;
+       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true, shadowLod = true, softParticles = true;
 };
 
 class Scene
@@ -559,6 +559,11 @@ public:
     if (asset == Water)
       return {{1, 1}, {0, -std::fmod(waterTime * .155f, 1.f)}};
     return {};
+  }
+  float SoftParticles(size_t asset) const
+  {
+    if(!settings.softParticles)return 0;
+    return asset==Droplet ? .045f : 0.f;
   }
   bool CastShadow(size_t asset) const
   {

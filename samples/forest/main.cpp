@@ -19,7 +19,7 @@ class ForestLoop final : public alloy3d::ApplicationLoop
 
 public:
   const char *GetApplicationName() const override { return "Alloy3D · Forest after rain"; }
-  alloy3d::RenderOptions GetRenderOptions() const override { return {4,true}; }
+  alloy3d::RenderOptions GetRenderOptions() const override { return {4,true,true}; }
   bool        InitialWindowSize(double &width, double &height, bool &border) override
   {
     width  = width_;
@@ -92,6 +92,7 @@ public:
           case Key::N: s.normalMaps = !s.normalMaps; break;
           case Key::M: s.materialDetail = !s.materialDetail; break;
           case Key::T: s.transmission = !s.transmission; break;
+          case Key::C: s.softParticles = !s.softParticles; break;
           case Key::U: s.shadowLod = !s.shadowLod; break;
           case Key::L: s.bloom = !s.bloom; break;
           case Key::O: s.toneMapping = !s.toneMapping; break;
@@ -162,6 +163,7 @@ public:
         [&](size_t asset, std::span<const alloy3d::ModelInstance> instances)
         {
           ctx.SetModelVisibility3D({true,scene_.CastShadow(asset)});
+          ctx.SetModelSoftParticles3D(scene_.SoftParticles(asset));
           ctx.SetModelWind3D(scene_.Wind(asset));
           ctx.SetModelTextureTransform3D(scene_.TextureTransform(asset));
           ctx.SetModelTransmission3D({scene_.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
@@ -182,6 +184,7 @@ public:
                                    48});
           ctx.DrawModelInstances3D(models_[asset], instances);
         });
+    ctx.SetModelSoftParticles3D(0);
     ctx.SetModelVisibility3D({false,true});
     ctx.SetModelShader(nullptr);ctx.SetModelTextureTransform3D({});
     scene_.DrawShadowProxies([&](size_t asset, auto instances){

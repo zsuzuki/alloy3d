@@ -57,6 +57,7 @@ typedef struct
   simd_float4     hemisphereSky; // RGB scaled by intensity
   simd_float4     hemisphereGround;
   simd_float4     hemisphereUpAndEnabled; // view-space up, enabled
+  simd_float4 sceneParameters; // snapshot ready, inverse size, view-depth sign
 } Uniforms;
 
 struct MaterialUniforms
@@ -68,6 +69,7 @@ struct MaterialUniforms
   simd_float4 normalMapping; // enabled, scale, reserved, reserved
   simd_float4 surfaceDetail; // enabled, roughness factor, AO strength, texture flags
   simd_float4 transmission; // RGB tint, strength
+  float softDistance;
   simd_float2 coverage; // dither interval
   simd_float4 wind; // direction XZ, strength, time * frequency
   simd_float4 windShape; // base height, inverse height range, placement phase, reserved

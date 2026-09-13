@@ -6,7 +6,7 @@
 namespace alloy3d::metal
 {
 PostProcess::PostProcess(id<MTLDevice> device,id<MTLLibrary> library,MTLPixelFormat colorFormat,
-                         MTLPixelFormat depthFormat,NSUInteger samples): device_(device),samples_(samples)
+                         MTLPixelFormat depthFormat,NSUInteger samples,bool sceneEffects): device_(device),samples_(samples),sceneEffects_(sceneEffects)
 {
   auto desc=[[[MTLRenderPipelineDescriptor alloc] init] autorelease];
   desc.label=@"Alloy3D HDR tone mapping";
@@ -24,8 +24,8 @@ PostProcess::PostProcess(id<MTLDevice> device,id<MTLLibrary> library,MTLPixelFor
 }
 PostProcess::~PostProcess()
 {
-  for(auto &page:pages_){[page.color release];[page.multisample release];[page.bloom release];[page.bloomScratch release];}
-  [pipeline_ release];[depthState_ release];[library_ release];[bloomExtract_ release];[bloomBlur_ release];
+  for(auto &page:pages_){[page.color release];[page.multisample release];[page.bloom release];[page.bloomScratch release];[page.depth release];[page.sceneColor release];[page.sceneDepth release];}
+  [depthPipeline_ release];[pipeline_ release];[depthState_ release];[library_ release];[bloomExtract_ release];[bloomBlur_ release];
 }
 void PostProcess::set(const PostProcessing3D &settings)
 {
@@ -61,6 +61,20 @@ MTLRenderPassDescriptor *PostProcess::begin(MTLRenderPassDescriptor *output,NSUI
     [page.color release];[page.multisample release];
     [page.bloom release];[page.bloomScratch release];page.bloom=page.bloomScratch=nil;
     page.color=color;page.multisample=multisample;page.releasePending=false;
+    [page.depth release];[page.sceneColor release];[page.sceneDepth release];page.depth=page.sceneColor=page.sceneDepth=nil;
+    if(sceneEffects_)
+    {
+      desc.textureType=MTLTextureType2D;desc.sampleCount=1;
+      desc.usage=MTLTextureUsageRenderTarget|MTLTextureUsageShaderRead;
+      page.sceneColor=[device_ newTextureWithDescriptor:desc];
+      desc.pixelFormat=MTLPixelFormatR32Float;desc.usage=MTLTextureUsageShaderRead|MTLTextureUsageShaderWrite;
+      page.sceneDepth=[device_ newTextureWithDescriptor:desc];
+      desc.pixelFormat=output.depthAttachment.texture.pixelFormat;
+      desc.textureType=samples_>1 ? MTLTextureType2DMultisample : MTLTextureType2D;desc.sampleCount=samples_;
+      desc.usage=MTLTextureUsageRenderTarget|MTLTextureUsageShaderRead;
+      page.depth=[device_ newTextureWithDescriptor:desc];
+      if(!page.sceneColor || !page.sceneDepth || !page.depth)throw std::bad_alloc();
+    }
   }
   MTLRenderPassDescriptor *pass=[[output copy] autorelease];
   auto color=pass.colorAttachments[0];
@@ -68,7 +82,47 @@ MTLRenderPassDescriptor *PostProcess::begin(MTLRenderPassDescriptor *output,NSUI
   color.resolveTexture=page.multisample ? page.color : nil;
   color.loadAction=MTLLoadActionClear;
   color.storeAction=page.multisample ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
+  if(sceneEffects_)
+  {
+    color.resolveTexture=page.multisample ? page.sceneColor : nil;
+    color.storeAction=page.multisample ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionStore;
+    pass.depthAttachment.texture=pass.stencilAttachment.texture=page.depth;
+    pass.depthAttachment.storeAction=pass.stencilAttachment.storeAction=MTLStoreActionStore;
+  }
   return pass;
+}
+MTLRenderPassDescriptor *PostProcess::transparentPass(MTLRenderPassDescriptor *output,NSUInteger index)
+{
+  auto &page=pages_.at(index);MTLRenderPassDescriptor *pass=[[output copy] autorelease];
+  auto color=pass.colorAttachments[0];color.texture=page.multisample ? page.multisample : page.color;
+  color.resolveTexture=page.multisample ? page.color : nil;
+  color.loadAction=MTLLoadActionLoad;color.storeAction=page.multisample ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
+  pass.depthAttachment.texture=pass.stencilAttachment.texture=page.depth;
+  pass.depthAttachment.loadAction=pass.stencilAttachment.loadAction=MTLLoadActionLoad;
+  pass.depthAttachment.storeAction=pass.stencilAttachment.storeAction=MTLStoreActionDontCare;
+  return pass;
+}
+void PostProcess::captureScene(id<MTLCommandBuffer> commands,NSUInteger index,const CameraData &camera)
+{
+  auto &page=pages_.at(index);
+  if(!sceneEffects_)return;
+  if(samples_==1)
+  {
+    auto blit=[commands blitCommandEncoder];[blit copyFromTexture:page.color toTexture:page.sceneColor];[blit endEncoding];
+  }
+  if(!depthPipeline_)
+  {
+    NSError *error=nil;
+    depthPipeline_=[device_ newComputePipelineStateWithFunction:[[library_ newFunctionWithName:samples_>1 ? @"resolveSceneDepthMS" : @"resolveSceneDepth"] autorelease] error:&error];
+    if(!depthPipeline_)throw std::runtime_error(error.localizedDescription.UTF8String);
+  }
+  struct { simd_float4x4 inverseProjection;simd_float4 parameters; } uniforms{
+    simd_inverse(camera.getProjectionMatrix()),{camera.getProjectionMode()==ProjectionMode::Identity ? 1.f : -1.f,0,0,0}};
+  auto encoder=[commands computeCommandEncoder];
+  [encoder setComputePipelineState:depthPipeline_];[encoder setTexture:page.depth atIndex:0];[encoder setTexture:page.sceneDepth atIndex:1];
+  [encoder setBytes:&uniforms length:sizeof(uniforms) atIndex:0];
+  [encoder dispatchThreads:MTLSizeMake(page.color.width,page.color.height,1) threadsPerThreadgroup:MTLSizeMake(8,8,1)];
+  [encoder endEncoding];
 }
 void PostProcess::prepare(id<MTLCommandBuffer> commands,NSUInteger index)
 {
@@ -117,7 +171,7 @@ void PostProcess::encode(id<MTLRenderCommandEncoder> encoder,NSUInteger page)
 void PostProcess::releaseUnusedMemory(){for(auto &page:pages_)page.releasePending=true;}
 size_t PostProcess::bytes() const
 {
-  size_t total=0;for(const auto &page:pages_)total+=page.color.allocatedSize+page.multisample.allocatedSize+page.bloom.allocatedSize+page.bloomScratch.allocatedSize;
+  size_t total=0;for(const auto &page:pages_)total+=page.color.allocatedSize+page.multisample.allocatedSize+page.bloom.allocatedSize+page.bloomScratch.allocatedSize+page.depth.allocatedSize+page.sceneColor.allocatedSize+page.sceneDepth.allocatedSize;
   return total;
 }
 bool PostProcess::releasePending() const

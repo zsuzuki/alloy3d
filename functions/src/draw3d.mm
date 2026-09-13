@@ -77,6 +77,7 @@ struct DrawModel3D
   simd_float2 coverage = {0,1};
   alloy3d::ModelWind3D wind;
   alloy3d::ModelVisibility3D visibility;
+  float softDistance = 0;
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -94,7 +95,7 @@ struct DrawModel3D
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
         textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), alphaToCoverage(other.alphaToCoverage), normalStrength(other.normalStrength),
-        materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), wind(other.wind), visibility(other.visibility), instanceOffset(other.instanceOffset),
+        materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), wind(other.wind), visibility(other.visibility), softDistance(other.softDistance), instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
   }
@@ -105,11 +106,11 @@ struct DrawModel3D
     shader = source.shader; parameters = source.parameters; highlight = source.highlight;
     textureTransform = source.textureTransform; maxAnisotropy = source.maxAnisotropy; alphaToCoverage = source.alphaToCoverage;
     normalStrength = source.normalStrength; materialDetail = source.materialDetail;
-    transmission = source.transmission; coverage = source.coverage; wind = source.wind; visibility = source.visibility;
+    transmission = source.transmission; coverage = source.coverage; wind = source.wind; visibility = source.visibility; softDistance = source.softDistance;
   }
   bool sameStyle(const DrawModel3D &other) const
   {
-    return visibility.visible == other.visibility.visible && visibility.castShadow == other.visibility.castShadow &&
+    return softDistance == other.softDistance && visibility.visible == other.visibility.visible && visibility.castShadow == other.visibility.castShadow &&
         shader == other.shader && simd_all(parameters == other.parameters) &&
         highlight.strength == other.highlight.strength && highlight.shininess == other.highlight.shininess &&
         simd_all(textureTransform.scale == other.textureTransform.scale) &&
@@ -215,9 +216,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   simd_float2 modelCoverage_;
   alloy3d::ModelWind3D modelWind_;
   alloy3d::ModelVisibility3D modelVisibility_;
+  float softDistance_;
+  id<MTLTexture> sceneColor_, sceneDepth_;
+  size_t instanceUsed_;
   id<MTLDepthStencilState>                            modelDepth_[2];
   std::vector<TransparentPart>                        transparentParts_;
-  id<MTLBuffer>              uniformBuffer_[3];
+  id<MTLBuffer>              uniformBuffer_[3][2];
   alloy3d::metal::VertexBuffer<VertexDataPrim3D> vertices_[3];
   alloy3d::metal::VertexBuffer<VertexDataPrim3D> verticesPlane_[3];
   alloy3d::metal::VertexBuffer<VertexData3D> textVertices_[3];
@@ -586,7 +590,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
   for (int i = 0; i < 3; i++)
   {
-    uniformBuffer_[i] = [device_ newBufferWithLength:sizeof(Uniforms)
+    for (int phase=0;phase<2;++phase) uniformBuffer_[i][phase] = [device_ newBufferWithLength:sizeof(Uniforms)
                                              options:MTLResourceStorageModeShared];
   }
   fontRender_           = [[FontRender alloc] init];
@@ -603,7 +607,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   for (auto sampler : modelSamplers_) [sampler release];
   for (int i = 0; i < 3; i++)
   {
-    [uniformBuffer_[i] release];
+    for(auto buffer:uniformBuffer_[i]) [buffer release];
     [shadowMaps_[i] release];
     [shadowPipelines_[i] release];
   }
@@ -1104,6 +1108,15 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   fogInverseRange_ = inverseRange;
 }
 
+- (void)setSceneColor:(id<MTLTexture>)color depth:(id<MTLTexture>)depth
+{
+  sceneColor_=color;sceneDepth_=depth;
+}
+- (void)setModelSoftParticles:(float)distance
+{
+  if(!std::isfinite(distance) || distance<0 || distance>100)throw std::invalid_argument("Soft particle distance must be in [0,100]");
+  softDistance_=distance;
+}
 - (void)setModelVisibility:(const alloy3d::ModelVisibility3D &)visibility
 {
   modelVisibility_ = visibility;
@@ -1185,6 +1198,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     target.coverage        = source.coverage;
     target.windPhase       = WindPhase(source.position);
   }
+  instanceUsed_ = modelInstances_.size();
   instancesPrepared_ = true;
 }
 
@@ -1316,6 +1330,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   drawModelList_.back().transmission = modelTransmission_;
   drawModelList_.back().wind = modelWind_;
   drawModelList_.back().visibility = modelVisibility_;
+  drawModelList_.back().softDistance = softDistance_;
   drawModelList_.back().coverage = modelCoverage_;
 }
 
@@ -1355,6 +1370,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
       drawModelList_.back().transmission = modelTransmission_;
   drawModelList_.back().wind = modelWind_;
   drawModelList_.back().visibility = modelVisibility_;
+  drawModelList_.back().softDistance = softDistance_;
       drawModelList_.back().coverage = i.coverage;
     }
     return;
@@ -1375,6 +1391,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     drawModelList_.back().transmission = modelTransmission_;
   drawModelList_.back().wind = modelWind_;
   drawModelList_.back().visibility = modelVisibility_;
+  drawModelList_.back().softDistance = softDistance_;
   }
   catch (...)
   {
@@ -1392,12 +1409,17 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 - (void)render:(nullable id<MTLRenderCommandEncoder>)renderEncoder
         camera:(nonnull alloy3d::CameraData *)camera;
 {
+  [self render:renderEncoder camera:camera phase:ScenePhase::All];
+}
+- (void)render:(nullable id<MTLRenderCommandEncoder>)renderEncoder
+        camera:(nonnull alloy3d::CameraData *)camera phase:(ScenePhase)phase
+{
   [renderEncoder pushDebugGroup:@"Draw3D"];
-  modelDrawCalls_ = 0;
+  if(phase!=ScenePhase::Transparent)modelDrawCalls_ = 0;
 
   if (nbPrimitives_ > 0 || nbPlanes_ > 0 || !drawModelList_.empty() || !drawTextList_.empty())
   {
-    auto uniformBuff = uniformBuffer_[pageIndex_];
+    auto uniformBuff = uniformBuffer_[pageIndex_][phase==ScenePhase::Transparent];
     auto uniform     = (Uniforms *)uniformBuff.contents;
 
     auto mdlview                  = camera->getModelViewMatrix();
@@ -1410,6 +1432,11 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     uniform->lightColorAndDiffuse =
         simd_make_float4(lightColor_.x, lightColor_.y, lightColor_.z, diffuseIntensity_);
     uniform->modelColor = simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
+    uniform->sceneParameters = {sceneDepth_ && phase==ScenePhase::Transparent ? 1.f : 0.f,
+        sceneDepth_ ? 1.f/sceneDepth_.width : 0.f, sceneDepth_ ? 1.f/sceneDepth_.height : 0.f,
+        camera->getProjectionMode()==alloy3d::ProjectionMode::Identity ? 1.f : -1.f};
+    [renderEncoder setFragmentTexture:sceneColor_ ? sceneColor_ : whiteTexture_ atIndex:5];
+    [renderEncoder setFragmentTexture:sceneDepth_ ? sceneDepth_ : whiteTexture_ atIndex:6];
     uniform->shadowTransform = shadowReady_ ? simd_mul(lightViewProjection_, simd_inverse(mdlview))
                                             : matrix_identity_float4x4;
     uniform->shadowParameters =
@@ -1497,6 +1524,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                                   part.occlusionStrength,
                                   float((part.roughnessTexture ? 1 : 0) | (part.occlusionTexture ? 2 : 0))};
         material.transmission = simd_make_float4(dmodel.transmission.color, dmodel.transmission.strength);
+        material.softDistance = blend ? dmodel.softDistance : 0;
         material.coverage = dmodel.coverage;
         SetWindUniforms(material, dmodel);
         [renderEncoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
@@ -1540,7 +1568,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                                instanceCount:instanced ? dmodel.instanceCount : 1];
         ++modelDrawCalls_;
       };
-      size_t usedInstances = modelInstances_.size();
+      size_t usedInstances = instanceUsed_;
       const alloy3d::Frustum3D frustum(*camera);
       std::vector<size_t> visible;
       transparentParts_.clear();
@@ -1549,6 +1577,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
         if(!dmodel.visibility.visible)continue;
         for (ModelPart *part in dmodel.model.parts)
         {
+          bool blend = part.alphaMode == 2 || (dmodel.instanceCount == 0 && dmodel.color.w < 1);
+          if ((phase==ScenePhase::Opaque && blend) || (phase==ScenePhase::Transparent && !blend))continue;
           if (frustumCulling_)
           {
             const auto bounds = WindBounds(part.renderBounds, dmodel.wind);
@@ -1577,7 +1607,6 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
             else if (!frustum.intersects(bounds, BuildModelMatrix(dmodel.position, dmodel.rotation, dmodel.scale)))
               continue;
           }
-          bool blend = part.alphaMode == 2 || (dmodel.instanceCount == 0 && dmodel.color.w < 1);
           if (!blend)
             drawPart(dmodel, part, false);
           else
@@ -1598,6 +1627,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                 transparentParts_.end(),
                 [](const auto &a, const auto &b)
                 { return a.depth == b.depth ? a.order < b.order : a.depth > b.depth; });
+      instanceUsed_ = usedInstances;
       const auto offset = usedInstances;
       if (transparentBatching_ && !transparentParts_.empty())
       {
@@ -1629,12 +1659,11 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
         first = end;
       }
       transparentParts_.clear();
-      drawModelList_.clear();
-      modelInstances_.clear();
+      if(phase!=ScenePhase::Opaque){drawModelList_.clear();modelInstances_.clear();}
     }
 
     [renderEncoder setDepthStencilState:modelDepth_[0]];
-    if (!drawTextList_.empty())
+    if (phase!=ScenePhase::Opaque && !drawTextList_.empty())
     {
       if (drawTextList_.size() > device_.maxBufferLength / sizeof(VertexData3D) / 4)
         throw std::length_error("Alloy3D 3D text exceeds device capacity");
@@ -1685,6 +1714,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   }
 
   [renderEncoder popDebugGroup];
+  if(phase==ScenePhase::Opaque)return;
+  sceneColor_=sceneDepth_=nil;
 
   shadowReady_       = false;
   instancesPrepared_ = false;
@@ -1709,6 +1740,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 // Called after the host acquires a free frame slot, before adding any draws.
 - (void)beginFrame
 {
+  sceneColor_=sceneDepth_=nil;
   shadowDrawCalls_ = 0;
   if (!shadowSettings_.enabled)
   {
