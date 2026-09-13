@@ -30,13 +30,15 @@ struct Harness
   id<MTLCommandQueue>      queue;
   id<MTLTexture>           colors[3];
   id<MTLTexture>           depth;
+  id<MTLTexture>           multisampleColor = nil;
   id<MTLDepthStencilState> depthState;
   id<MTLCommandBuffer>     commands[3] = {nil, nil, nil};
   double                   submitMs = 0, encodeMs = 0, gpuMs = 0;
   NSUInteger               size;
   MTLClearColor            clearColor = MTLClearColorMake(0, 0, 0, 0);
 
-  Harness(id<MTLDevice> d, const char *shader, NSUInteger dimension = 256) : device(d), size(dimension)
+  Harness(id<MTLDevice> d, const char *shader, NSUInteger dimension = 256,
+          NSUInteger samples = 1) : device(d), size(dimension)
   {
     NSError *error = nil;
     library = [d newLibraryWithURL:[NSURL fileURLWithPath:[NSString stringWithUTF8String:shader]]
@@ -45,6 +47,8 @@ struct Harness
     view                  = [[MTKView alloc] initWithFrame:NSMakeRect(0, 0, 256, 256) device:d];
     view.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
     view.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+    Check([d supportsTextureSampleCount:samples], "unsupported harness sample count");
+    view.sampleCount             = samples;
     draw                         = [[Draw3D alloc] initWithMetalKitView:view shaderlib:library];
     queue                        = [d newCommandQueue];
     auto desc  = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:view.colorPixelFormat
@@ -55,6 +59,14 @@ struct Harness
     desc.storageMode = MTLStorageModeShared;
     for (auto &color : colors)
       color = [d newTextureWithDescriptor:desc];
+    if (samples > 1)
+    {
+      desc.storageMode = MTLStorageModePrivate;
+      desc.textureType = MTLTextureType2DMultisample;
+      desc.sampleCount = samples;
+      multisampleColor = [d newTextureWithDescriptor:desc];
+      Check(multisampleColor != nil, "MSAA color allocation failed");
+    }
     desc.pixelFormat        = view.depthStencilPixelFormat;
     desc.storageMode        = MTLStorageModePrivate;
     depth                   = [d newTextureWithDescriptor:desc];
@@ -78,6 +90,7 @@ struct Harness
     [library release];
     [queue release];
     [depth release];
+    [multisampleColor release];
     [depthState release];
     for (auto color : colors)
       [color release];
@@ -108,6 +121,12 @@ struct Harness
     pass.colorAttachments[0].clearColor  = clearColor;
     pass.colorAttachments[0].loadAction  = MTLLoadActionClear;
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    if (multisampleColor)
+    {
+      pass.colorAttachments[0].texture = multisampleColor;
+      pass.colorAttachments[0].resolveTexture = colors[slot];
+      pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+    }
     pass.depthAttachment.texture         = depth;
     pass.depthAttachment.loadAction      = MTLLoadActionClear;
     pass.depthAttachment.clearDepth      = 1;

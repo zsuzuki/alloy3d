@@ -2,6 +2,7 @@
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
 #pragma once
+#include <alloy3d/render_options.h>
 
 #include <alloy3d/lighting.h>
 #include <alloy3d/model.h>
@@ -168,6 +169,9 @@ public:
 
   // window title
   [[nodiscard]] virtual const char *GetApplicationName() const { return "Alloy3D"; };
+
+  // Read once before creating the window and render pipelines.
+  [[nodiscard]] virtual RenderOptions GetRenderOptions() const { return {}; }
 
   // start window size
   virtual bool InitialWindowSize(double &width, double &height, bool &border) { return true; }

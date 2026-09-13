@@ -19,6 +19,7 @@ class ForestLoop final : public alloy3d::ApplicationLoop
 
 public:
   const char *GetApplicationName() const override { return "Alloy3D · Forest after rain"; }
+  alloy3d::RenderOptions GetRenderOptions() const override { return {4}; }
   bool        InitialWindowSize(double &width, double &height, bool &border) override
   {
     width  = width_;

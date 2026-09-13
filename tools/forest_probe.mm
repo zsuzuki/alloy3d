@@ -28,7 +28,10 @@ int main(int argc, char **argv)
       if (!device)
         return 77;
       {
-        Harness h(device, argv[1], 1000);
+        const char *samplesEnv = std::getenv("ALLOY3D_FOREST_SAMPLES");
+        NSUInteger samples = samplesEnv ? std::strtoul(samplesEnv, nullptr, 10) : 1;
+        Check(samples == 1 || samples == 2 || samples == 4 || samples == 8, "invalid forest samples");
+        Harness h(device, argv[1], 1000, samples);
         h.clearColor =
             MTLClearColorMake(forest::SkyColor.x, forest::SkyColor.y, forest::SkyColor.z, 1);
         forest::Scene       scene;

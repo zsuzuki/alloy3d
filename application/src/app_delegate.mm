@@ -3,6 +3,7 @@
 //
 #import "app_delegate.h"
 #import "renderer.h"
+#include "render_options.h"
 #import <AppKit/AppKit.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <MetalKit/MetalKit.h>
@@ -235,7 +236,9 @@ NSMenu *createMenu();
   view_.clearColor              = MTLClearColorMake(clearRed, clearGreen, clearBlue, clearAlpha);
   view_.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
   view_.clearDepth              = 1.0f;
-  view_.sampleCount             = 1;
+  view_.sampleCount = alloy3d::internal::SelectSampleCount(
+      appLoop_->GetRenderOptions().sampleCount,
+      [&](uint32_t count) { return [device_ supportsTextureSampleCount:count]; });
 
   renderer_      = [[Renderer alloc] initWithMetalKitView:view_];
   view_.delegate = renderer_;
