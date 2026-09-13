@@ -3,6 +3,7 @@
 //
 #pragma once
 #include <alloy3d/render_options.h>
+#include <alloy3d/post_processing.h>
 
 #include <alloy3d/lighting.h>
 #include <alloy3d/model.h>
@@ -104,6 +105,8 @@ public:
   virtual bool SetModelMaterialDetail3D(const ModelMaterialDetail3D &detail) { return false; }
   virtual bool SetModelTransmission3D(const ModelTransmission3D &transmission) { return false; }
   // Per-draw dither interval, default [0,1]. Instances provide their own interval.
+  // Available when RenderOptions.hdr was enabled at launch.
+  virtual bool SetPostProcessing3D(const PostProcessing3D &settings) { return false; }
   virtual bool SetModelWind3D(const ModelWind3D &wind) { return false; }
   virtual bool SetModelCoverage3D(simd_float2 interval) { return false; }
   // Frame-level conservative color-pass culling. Shadow casters remain submitted.

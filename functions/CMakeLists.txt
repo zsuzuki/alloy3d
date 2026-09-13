@@ -12,6 +12,7 @@ set(SOURCES
   src/sprite.mm
   src/draw2d.mm
   src/draw3d.mm
+  src/post_process.mm
   src/font_render.mm
   src/memory_cache.mm
   src/game_pad.mm

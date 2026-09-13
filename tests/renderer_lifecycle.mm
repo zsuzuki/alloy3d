@@ -42,7 +42,8 @@ int main(int argc, char **argv)
       view.paused = YES;
       view.colorPixelFormat        = MTLPixelFormatBGRA8Unorm;
       view.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
-      auto renderer                = [[Renderer alloc] initWithMetalKitView:view];
+      view.sampleCount = iteration==1 ? 4 : 1;
+      auto renderer = [[Renderer alloc] initWithMetalKitView:view renderOptions:(alloy3d::RenderOptions{uint32_t(view.sampleCount),iteration>0})];
       [renderer setApplicationLoop:&loop];
       [renderer startApplicationLoop];
       for (int frame = 0; frame < frames; ++frame)

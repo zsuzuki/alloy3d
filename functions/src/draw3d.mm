@@ -556,12 +556,17 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 - (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view
                                    shaderlib:(nonnull id<MTLLibrary>)library
 {
+  return [self initWithMetalKitView:view shaderlib:library colorFormat:view.colorPixelFormat];
+}
+
+- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view shaderlib:(nonnull id<MTLLibrary>)library colorFormat:(MTLPixelFormat)format
+{
   [super init];
 
   modelCoverage_ = {0,1};
   shaderOwner_      = std::make_shared<const int>(0);
   device_           = view.device;
-  colorFormat_      = view.colorPixelFormat;
+  colorFormat_      = format;
   depthFormat_      = view.depthStencilPixelFormat;
   sampleCount_      = view.sampleCount;
   [self modelSampler:1];

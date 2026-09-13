@@ -7,6 +7,7 @@
 
 @interface Renderer : NSObject <MTKViewDelegate>
 
+- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view renderOptions:(alloy3d::RenderOptions)options;
 - (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view;
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size;
 - (void)drawInMTKView:(nonnull MTKView *)view;

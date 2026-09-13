@@ -1,3 +1,4 @@
+#include <alloy3d/metal/post_process.h>
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
@@ -184,6 +185,7 @@ public:
   Draw3D     *draw3d_;
   alloy3d::CameraData *camera_;
   id<MTLDevice> device_;
+  alloy3d::metal::PostProcess *post_ = nullptr;
 
   AppCtx()           = default;
   ~AppCtx() override = default;
@@ -208,6 +210,7 @@ public:
     stats.textTextureCacheBytes += other.textTextureCacheBytes;
     stats.textCacheEntries += other.textCacheEntries;
     stats.releasePending |= other.releasePending;
+    if(post_) { stats.postProcessBytes=post_->bytes(); stats.releasePending |= post_->releasePending(); }
     return stats;
   }
 
@@ -215,6 +218,7 @@ public:
   {
     [draw2d_ releaseUnusedMemory];
     [draw3d_ releaseUnusedMemory];
+    if(post_)post_->releaseUnusedMemory();
   }
 
   void Print(std::string_view msg, float x, float y) override
@@ -328,6 +332,11 @@ public:
     return true;
   }
 
+  bool SetPostProcessing3D(const alloy3d::PostProcessing3D &settings) override
+  {
+    if(!post_)return false;
+    post_->set(settings);return true;
+  }
   bool SetModelWind3D(const alloy3d::ModelWind3D &wind) override
   {
     [draw3d_ setModelWind:wind];
@@ -544,6 +553,8 @@ public:
   Draw2D    *draw2d_;
   Draw3D    *draw3d_;
   bool       applicationStarted_;
+  std::unique_ptr<alloy3d::metal::PostProcess> post_;
+  NSUInteger postPage_;
 }
 
 + (id<MTLLibrary>)createShaderLibrary:(id<MTLDevice>)device fromName:(NSString *)libraryName
@@ -566,7 +577,12 @@ public:
   return library;
 }
 
-- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view;
+- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view
+{
+  return [self initWithMetalKitView:view renderOptions:alloy3d::RenderOptions{}];
+}
+
+- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view renderOptions:(alloy3d::RenderOptions)options
 {
   self = [super init];
   if (self != nil)
@@ -583,7 +599,9 @@ public:
     // initialize
     shaderLibrary_ = [Renderer createShaderLibrary:device_ fromName:@"shaders/shaders"];
     draw2d_        = [[Draw2D alloc] initWithMetalKitView:view shaderlib:shaderLibrary_];
-    draw3d_        = [[Draw3D alloc] initWithMetalKitView:view shaderlib:shaderLibrary_];
+    draw3d_ = [[Draw3D alloc] initWithMetalKitView:view shaderlib:shaderLibrary_
+        colorFormat:options.hdr ? MTLPixelFormatRGBA16Float : view.colorPixelFormat];
+    if(options.hdr)post_=std::make_unique<alloy3d::metal::PostProcess>(device_,shaderLibrary_,view.colorPixelFormat,view.depthStencilPixelFormat,view.sampleCount);
 
     //
 
@@ -638,6 +656,7 @@ public:
   appctx.draw3d_ = draw3d_;
   appctx.camera_ = &camera_;
   appctx.device_ = device_;
+  appctx.post_ = post_.get();
   [draw2d_ beginFrame];
   [draw3d_ beginFrame];
   appLoop_->Update(appctx);
@@ -649,7 +668,8 @@ public:
   if (renderPassDescriptor != nil && drawable != nil)
   {
     [draw3d_ encodeShadowMap:commandBuffer camera:&camera_];
-    auto renderEncoder  = [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
+    auto scenePass=post_ ? post_->begin(renderPassDescriptor,postPage_) : renderPassDescriptor;
+    auto renderEncoder  = [commandBuffer renderCommandEncoderWithDescriptor:scenePass];
     if (renderEncoder == nil)
     {
       [draw2d_ discardFrame];
@@ -666,6 +686,14 @@ public:
     // 3D Graphics
     [draw3d_ render:renderEncoder camera:&camera_];
 
+    if(post_)
+    {
+      [renderEncoder endEncoding];
+      renderEncoder=[commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
+      if(!renderEncoder){[draw2d_ discardFrame];[commandBuffer commit];postPage_=(postPage_+1)%3;return;}
+      post_->encode(renderEncoder,postPage_);
+      postPage_=(postPage_+1)%3;
+    }
     // 2D Graphics
     [renderEncoder setCullMode:MTLCullModeNone];
     [draw2d_ render:renderEncoder];
@@ -712,6 +740,7 @@ public:
   appctx.draw3d_ = draw3d_;
   appctx.camera_ = &camera_;
   appctx.device_ = device_;
+  appctx.post_ = post_.get();
   appLoop_->Start(appctx);
 }
 

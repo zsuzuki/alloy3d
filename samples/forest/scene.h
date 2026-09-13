@@ -3,6 +3,7 @@
 #include <alloy3d/camera.h>
 #include <alloy3d/lighting.h>
 #include <alloy3d/lod.h>
+#include <alloy3d/post_processing.h>
 #include <alloy3d/model_instance.h>
 #include <alloy3d/model_wind.h>
 #include <alloy3d/model_texture.h>
@@ -168,7 +169,7 @@ struct Settings
 {
   bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
        flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true,
-       transmission = true, heightFog = true, softShadows = true;
+       transmission = true, heightFog = true, softShadows = true, toneMapping = true;
 };
 
 class Scene
@@ -533,6 +534,10 @@ public:
     shadow.filterRadius = settings.softShadows ? 1.25f : 0;
     shadow.stabilize = true;
     return shadow;
+  }
+  alloy3d::PostProcessing3D PostProcessing() const
+  {
+    return {1,settings.toneMapping ? alloy3d::ToneMapping3D::ACES : alloy3d::ToneMapping3D::None};
   }
   alloy3d::ModelWind3D Wind(size_t asset) const
   {

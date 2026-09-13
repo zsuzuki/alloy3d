@@ -33,6 +33,7 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
 - (void)setModelNormalMapping:(const alloy3d::ModelNormalMapping3D &)mapping;
 - (void)setModelTextureSampling:(const alloy3d::ModelTextureSampling3D &)sampling;
 
+- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view shaderlib:(nonnull id<MTLLibrary>)library colorFormat:(MTLPixelFormat)format;
 - (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view
                                    shaderlib:(nonnull id<MTLLibrary>)library;
 - (void)render:(nullable id<MTLRenderCommandEncoder>)renderEncoder

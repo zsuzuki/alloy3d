@@ -22,5 +22,6 @@ struct RenderMemoryStats
   std::size_t textCacheEntries      = 0;
   // True until all frame pages scheduled for release have been reused safely.
   bool releasePending = false;
+  std::size_t postProcessBytes = 0; // Optional HDR targets across all frame pages.
 };
 } // namespace alloy3d

@@ -236,11 +236,12 @@ NSMenu *createMenu();
   view_.clearColor              = MTLClearColorMake(clearRed, clearGreen, clearBlue, clearAlpha);
   view_.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
   view_.clearDepth              = 1.0f;
+  const auto renderOptions = appLoop_->GetRenderOptions();
   view_.sampleCount = alloy3d::internal::SelectSampleCount(
-      appLoop_->GetRenderOptions().sampleCount,
+      renderOptions.sampleCount,
       [&](uint32_t count) { return [device_ supportsTextureSampleCount:count]; });
 
-  renderer_      = [[Renderer alloc] initWithMetalKitView:view_];
+  renderer_      = [[Renderer alloc] initWithMetalKitView:view_ renderOptions:renderOptions];
   view_.delegate = renderer_;
   [renderer_ setApplicationLoop:appLoop_];
   [renderer_ mtkView:view_ drawableSizeWillChange:view_.drawableSize];

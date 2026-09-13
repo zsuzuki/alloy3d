@@ -4,6 +4,7 @@
 #import <alloy3d/metal/draw3d.h>
 #include <alloy3d/metal/normal_matrix.h>
 #include <array>
+#include <alloy3d/metal/post_process.h>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -35,10 +36,11 @@ struct Harness
   id<MTLCommandBuffer>     commands[3] = {nil, nil, nil};
   double                   submitMs = 0, encodeMs = 0, gpuMs = 0;
   NSUInteger               size;
+  std::unique_ptr<alloy3d::metal::PostProcess> post;
   MTLClearColor            clearColor = MTLClearColorMake(0, 0, 0, 0);
 
   Harness(id<MTLDevice> d, const char *shader, NSUInteger dimension = 256,
-          NSUInteger samples = 1) : device(d), size(dimension)
+          NSUInteger samples = 1, bool hdr = false) : device(d), size(dimension)
   {
     NSError *error = nil;
     library = [d newLibraryWithURL:[NSURL fileURLWithPath:[NSString stringWithUTF8String:shader]]
@@ -49,7 +51,8 @@ struct Harness
     view.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
     Check([d supportsTextureSampleCount:samples], "unsupported harness sample count");
     view.sampleCount             = samples;
-    draw                         = [[Draw3D alloc] initWithMetalKitView:view shaderlib:library];
+    draw = [[Draw3D alloc] initWithMetalKitView:view shaderlib:library colorFormat:hdr ? MTLPixelFormatRGBA16Float : view.colorPixelFormat];
+    if(hdr)post=std::make_unique<alloy3d::metal::PostProcess>(d,library,view.colorPixelFormat,view.depthStencilPixelFormat,samples);
     queue                        = [d newCommandQueue];
     auto desc  = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:view.colorPixelFormat
                                                                     width:size
@@ -85,6 +88,7 @@ struct Harness
       [command waitUntilCompleted];
       [command release];
     }
+    post.reset();
     [draw release];
     [view release];
     [library release];
@@ -134,9 +138,16 @@ struct Harness
     pass.stencilAttachment.loadAction    = MTLLoadActionClear;
     commands[slot]                       = [[queue commandBuffer] retain];
     [draw encodeShadowMap:commands[slot] camera:&camera];
-    auto encoder                         = [commands[slot] renderCommandEncoderWithDescriptor:pass];
+    auto scenePass=post ? post->begin(pass,slot) : pass;
+    auto encoder = [commands[slot] renderCommandEncoderWithDescriptor:scenePass];
     [encoder setDepthStencilState:depthState];
     [draw render:encoder camera:&camera];
+    if(post)
+    {
+      [encoder endEncoding];
+      encoder=[commands[slot] renderCommandEncoderWithDescriptor:pass];
+      post->encode(encoder,slot);
+    }
     if (after)
       after(encoder);
     [encoder endEncoding];

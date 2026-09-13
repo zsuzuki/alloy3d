@@ -1,3 +1,10 @@
+add_executable(alloy3d_hdr_regression hdr_regression.mm)
+target_include_directories(alloy3d_hdr_regression PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_hdr_regression PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_hdr_regression shaders)
+add_test(NAME hdr_regression COMMAND alloy3d_hdr_regression
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib ${CMAKE_SOURCE_DIR}/assets/tests/materials)
+set_tests_properties(hdr_regression PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
 add_executable(alloy3d_material_shader_regression material_shader_regression.mm)
 target_include_directories(alloy3d_material_shader_regression PRIVATE ../functions/internal)
 target_link_libraries(alloy3d_material_shader_regression PRIVATE Alloy3D::application)

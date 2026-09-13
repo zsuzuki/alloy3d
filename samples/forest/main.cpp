@@ -19,7 +19,7 @@ class ForestLoop final : public alloy3d::ApplicationLoop
 
 public:
   const char *GetApplicationName() const override { return "Alloy3D · Forest after rain"; }
-  alloy3d::RenderOptions GetRenderOptions() const override { return {4}; }
+  alloy3d::RenderOptions GetRenderOptions() const override { return {4,true}; }
   bool        InitialWindowSize(double &width, double &height, bool &border) override
   {
     width  = width_;
@@ -41,6 +41,7 @@ public:
   }
   void Start(alloy3d::ApplicationContext &ctx) override
   {
+    ctx.SetPostProcessing3D(scene_.PostProcessing());
     ctx.SetModelTextureSampling3D({8,true});
     ctx.SetTransparentBatching3D(true);
     ctx.SetFrustumCulling3D(true);
@@ -91,6 +92,7 @@ public:
           case Key::N: s.normalMaps = !s.normalMaps; break;
           case Key::M: s.materialDetail = !s.materialDetail; break;
           case Key::T: s.transmission = !s.transmission; break;
+          case Key::O: s.toneMapping = !s.toneMapping; break;
           case Key::K: s.softShadows = !s.softShadows; environmentDirty_ = true; break;
           case Key::J: s.heightFog = !s.heightFog; environmentDirty_ = true; break;
           case Key::G:
@@ -152,6 +154,7 @@ public:
     }
     scene_.Animate(scene_.time + (scene_.settings.paused ? 0 : dt),
                    ctx.GetCamera().getEyePosition());
+    ctx.SetPostProcessing3D(scene_.PostProcessing());
     ctx.SetModelNormalMapping3D({scene_.settings.normalMaps ? 1.f : 0.f});
     scene_.Draw(
         [&](size_t asset, std::span<const alloy3d::ModelInstance> instances)

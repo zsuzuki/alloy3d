@@ -14,6 +14,7 @@ endif()
 file(MAKE_DIRECTORY "${METAL_MODULE_CACHE_DIR}")
 
 set(src
+  post_process.metal
   simple2d.metal
   simple3d.metal
   prim2d.metal
