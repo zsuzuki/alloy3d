@@ -312,6 +312,12 @@ public:
     return true;
   }
 
+  bool SetModelTransmission3D(const alloy3d::ModelTransmission3D &transmission) override
+  {
+    [draw3d_ setModelTransmission:transmission];
+    return true;
+  }
+
   void SetDirectionalLight3D(const alloy3d::DirectionalLight3D &light) override
   {
     [draw3d_ setDirectionalLight:light];

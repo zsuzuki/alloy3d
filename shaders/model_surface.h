@@ -22,4 +22,5 @@ struct ModelSurface
   float lightIntensity; // directional diffuse intensity, [0,1]
   float roughness; // sampled material roughness when detail is enabled, otherwise 1
   float occlusion; // sampled ambient occlusion when detail is enabled, otherwise 1
+  float3 transmissionColor; // thin-surface backlighting, already included in litColor
 };

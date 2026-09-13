@@ -94,8 +94,8 @@ float3 alloy3dShade(ModelSurface s, float4 p)
 inline constexpr const char *LeafShader   = R"metal(
 float3 alloy3dShade(ModelSurface s, float4 p)
 {
-  // A small transmitted-light approximation keeps thin foliage readable in shade.
-  return s.litColor + s.baseColor * float3(.32, .48, .12) * .18;
+  // Directional thin-surface lighting is supplied by the library.
+  return s.litColor;
 }
 )metal";
 
@@ -175,7 +175,8 @@ inline float TreeBaseHeight(float x, float z, float scale)
 struct Settings
 {
   bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
-       flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true;
+       flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true,
+       transmission = true;
 };
 
 class Scene

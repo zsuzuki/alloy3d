@@ -94,6 +94,7 @@ public:
   // Default strength is zero. Invalid settings throw without changing state.
   virtual bool SetModelHighlight3D(const ModelHighlight3D &highlight) { return false; }
   virtual bool SetModelMaterialDetail3D(const ModelMaterialDetail3D &detail) { return false; }
+  virtual bool SetModelTransmission3D(const ModelTransmission3D &transmission) { return false; }
 
   // Transform base-color UVs, including MASK shadow coverage and custom surface UVs.
   // Identity by default. Invalid values throw without changing state in the bundled host.

@@ -88,6 +88,7 @@ public:
           {
           case Key::N: s.normalMaps = !s.normalMaps; break;
           case Key::M: s.materialDetail = !s.materialDetail; break;
+          case Key::T: s.transmission = !s.transmission; break;
           case Key::G:
             s.fog             = !s.fog;
             environmentDirty_ = true;
@@ -151,6 +152,8 @@ public:
         [&](size_t asset, std::span<const alloy3d::ModelInstance> instances)
         {
           ctx.SetModelTextureTransform3D(scene_.TextureTransform(asset));
+          ctx.SetModelTransmission3D({scene_.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
+                                      {.75f, 1.f, .4f}});
           ctx.SetModelMaterialDetail3D({scene_.settings.materialDetail && (asset == forest::Ground || asset == forest::Rock)});
           ctx.SetModelShader(asset == forest::Water     ? waterShader_
                              : asset == forest::Ground  ? groundShader_

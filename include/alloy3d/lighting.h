@@ -4,6 +4,13 @@
 
 namespace alloy3d
 {
+struct ModelTransmission3D
+{
+  // Thin-surface backlighting; does not change alpha or refract the background.
+  float strength = 0; // Finite [0,1], zero disables.
+  simd_float3 color = {1, 1, 1}; // Finite linear RGB [0,1].
+};
+
 struct ModelMaterialDetail3D
 {
   // Optional lightweight use of glTF roughness and occlusion, not a full PBR model.

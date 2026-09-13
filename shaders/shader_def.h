@@ -64,6 +64,7 @@ struct MaterialUniforms
   simd_float4 textureTransform; // UV scale.xy, offset.zw (identity: 1,1,0,0)
   simd_float4 normalMapping; // enabled, scale, reserved, reserved
   simd_float4 surfaceDetail; // enabled, roughness factor, AO strength, texture flags
+  simd_float4 transmission; // RGB tint, strength
 };
 
 struct ModelInstanceUniforms

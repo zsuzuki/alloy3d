@@ -61,6 +61,7 @@ struct DrawModel3D
   uint32_t maxAnisotropy = 1;
   float normalStrength = 1;
   bool materialDetail = false;
+  alloy3d::ModelTransmission3D transmission;
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -78,7 +79,7 @@ struct DrawModel3D
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
         textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), normalStrength(other.normalStrength),
-        materialDetail(other.materialDetail), instanceOffset(other.instanceOffset),
+        materialDetail(other.materialDetail), transmission(other.transmission), instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
   }
@@ -204,6 +205,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   alloy3d::ModelTextureSampling3D modelTextureSampling_;
   alloy3d::ModelNormalMapping3D modelNormalMapping_;
   alloy3d::ModelMaterialDetail3D modelMaterialDetail_;
+  alloy3d::ModelTransmission3D modelTransmission_;
   id<MTLSamplerState> modelSamplers_[17]; // Bounded lazy cache, index 1..16.
 
   SimpleLock primLock_;
@@ -443,6 +445,15 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
 - (void)setModelMaterialDetail:(const alloy3d::ModelMaterialDetail3D &)detail
 {
   modelMaterialDetail_ = detail;
+}
+
+- (void)setModelTransmission:(const alloy3d::ModelTransmission3D &)transmission
+{
+  auto color = transmission.color;
+  if (!std::isfinite(transmission.strength) || transmission.strength < 0 || transmission.strength > 1 ||
+      !simd_all(color >= 0) || !simd_all(color <= 1))
+    throw std::invalid_argument("Alloy3D transmission strength and color must be finite in [0,1]");
+  modelTransmission_ = transmission;
 }
 
 - (void)setModelHighlight:(const alloy3d::ModelHighlight3D &)highlight
@@ -1172,6 +1183,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
   drawModelList_.back().normalStrength = modelNormalMapping_.strength;
   drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
+  drawModelList_.back().transmission = modelTransmission_;
 }
 
 - (void)drawModelInstances:(MetalModel *)model
@@ -1203,6 +1215,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
       drawModelList_.back().normalStrength = modelNormalMapping_.strength;
       drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
+      drawModelList_.back().transmission = modelTransmission_;
     }
     return;
   }
@@ -1218,6 +1231,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
     drawModelList_.back().normalStrength = modelNormalMapping_.strength;
     drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
+    drawModelList_.back().transmission = modelTransmission_;
   }
   catch (...)
   {
@@ -1325,6 +1339,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
         material.surfaceDetail = {dmodel.materialDetail ? 1.f : 0.f, part.roughness,
                                   part.occlusionStrength,
                                   float((part.roughnessTexture ? 1 : 0) | (part.occlusionTexture ? 2 : 0))};
+        material.transmission = simd_make_float4(dmodel.transmission.color, dmodel.transmission.strength);
         [renderEncoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
         [renderEncoder setFragmentBytes:&material
                                  length:sizeof(material)

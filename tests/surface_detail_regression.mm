@@ -52,6 +52,27 @@ int main(int argc, char **argv)
         placements[1]={{.4f,0,.5f},{},{-.6f,.6f,1},{1,1,1,1}};
         auto individual=h.Run(camera,[&]{for(auto &i:placements)[h.draw drawModel:shared position:i.position rotation:i.rotation scale:i.scale color:i.color];});
         Check(individual==h.Run(camera,[&]{[h.draw drawModelInstances:shared instances:placements];}),"material detail instancing differs");
+        auto transmissionShader=[h.draw createModelShader:
+            "float3 alloy3dShade(ModelSurface s,float4 p){return s.transmissionColor;}" diagnostics:error];
+        Check(bool(transmissionShader),error.c_str());
+        [h.draw setModelShader:transmissionShader parameters:{}];
+        [h.draw setLightDirection:{0,0,1} ambient:0 diffuse:1];
+        [h.draw setModelTransmission:(alloy3d::ModelTransmission3D{.4f,{1,.6f,.2f}})];
+        auto back=h.Run(camera,[&]{submit(smooth);});
+        Check(std::abs(int((back[center]>>16)&255)-102)<2 && std::abs(int((back[center]>>8)&255)-61)<2,
+              "thin-surface backlighting has wrong strength/tint");
+        [h.draw setLightDirection:{0,0,-1} ambient:0 diffuse:1];
+        Check((h.Run(camera,[&]{submit(smooth);})[center]&0xffffff)==0,"front lighting incorrectly gained transmission");
+        [h.draw setLightDirection:{0,0,1} ambient:0 diffuse:1];
+        h.Begin(0);submit(smooth);[h.draw setModelTransmission:{}];h.Encode(0,camera);[h.commands[0] commit];
+        Check(h.Read(0)==back,"transmission was not captured per draw");
+        Check((h.Run(camera,[&]{submit(smooth);})[center]&0xffffff)==0,"disabled transmission is not zero");
+        for (auto invalid : {alloy3d::ModelTransmission3D{-1,{1,1,1}}, alloy3d::ModelTransmission3D{.4f,{2,1,1}}})
+        {
+          bool rejected=false;
+          try{[h.draw setModelTransmission:invalid];}catch(const std::invalid_argument&){rejected=true;}
+          Check(rejected,"invalid transmission accepted");
+        }
         for(auto m:{mapped,smooth,rough,shared})[m release];
       }
       [device release];std::puts("surface detail: AO, roughness, linear data, legacy disabled, frame snapshots and shared instances passed");return 0;

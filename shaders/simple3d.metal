@@ -108,7 +108,7 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   // Custom surfaces need view position even with highlights disabled or unlit materials.
 #ifndef ALLOY3D_CUSTOM_SURFACE
   if ((material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0) ||
-      material.normalMapping.x != 0)
+      material.normalMapping.x != 0 || material.transmission.w > 0)
 #endif
     o.viewPosition = (cameraData.worldTransform * position).xyz;
   o.normal     = UnitModelNormal(cameraData.worldNormalTransform * normal);
@@ -146,7 +146,7 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   // Custom surfaces need view position even with highlights disabled or unlit materials.
 #ifndef ALLOY3D_CUSTOM_SURFACE
   if ((material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0) ||
-      material.normalMapping.x != 0)
+      material.normalMapping.x != 0 || material.transmission.w > 0)
 #endif
     o.viewPosition = (instance.modelView * position).xyz;
   o.normal     = UnitModelNormal(instance.normalTransform * normal);
@@ -259,6 +259,17 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   half3 litColor =
       unlit ? baseColor.rgb : baseColor.rgb * (ambientColor + diffuse * shadow * lightColor);
   half3 specularColor = half3(0);
+  half3 transmissionColor = half3(0);
+  if (!unlit && material.transmission.w > 0)
+  {
+    float3 v = material.highlight.z != 0 ? UnitModelNormal(-in.viewPosition) : float3(0,0,1);
+    float forward = saturate(dot(-l, v));
+    float back = saturate(-dot(n,l));
+    transmissionColor = baseColor.rgb * lightColor * half3(material.transmission.rgb) *
+        half(material.transmission.w * back * (.35f + .65f * forward * forward) *
+             saturate(cameraData.lightColorAndDiffuse.w) * float(shadow));
+    litColor += transmissionColor;
+  }
   if (!unlit && material.highlight.x > 0 && diffuse > 0 && shadow > 0)
   {
     // Orthographic rays are parallel. Perspective rays point toward the camera origin.
@@ -292,7 +303,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                        in.viewPosition,
                        material.highlight.z != 0 ? UnitModelNormal(-in.viewPosition) : float3(0, 0, 1),
                        l,
-                       saturate(cameraData.lightColorAndDiffuse.w), roughness, occlusion};
+                       saturate(cameraData.lightColorAndDiffuse.w), roughness, occlusion, float3(transmissionColor)};
   litColor = half3(alloy3dShade(surface, parameters));
 #endif
   return ApplyFog(half4(litColor, baseColor.a), in.viewDepth, cameraData);
