@@ -68,6 +68,7 @@ struct MaterialUniforms
   simd_float4 normalMapping; // enabled, scale, reserved, reserved
   simd_float4 surfaceDetail; // enabled, roughness factor, AO strength, texture flags
   simd_float4 transmission; // RGB tint, strength
+  simd_float2 coverage; // dither interval
 };
 
 struct ModelInstanceUniforms
@@ -75,6 +76,7 @@ struct ModelInstanceUniforms
   matrix_float4x4 modelView;
   matrix_float3x3 normalTransform;
   simd_float4     color;
+  simd_float2     coverage;
 };
 
 typedef struct

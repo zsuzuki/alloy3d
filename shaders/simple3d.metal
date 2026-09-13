@@ -22,6 +22,7 @@ struct v2f
     float3 viewPosition;
     float4 tangent;
     float2 meshTexcoord;
+    float2 coverage [[flat]];
 };
 
 //
@@ -117,6 +118,7 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   o.meshTexcoord = vd.texcoord;
   o.color      = vd.color;
   o.modelColor = cameraData.modelColor;
+  o.coverage = material.coverage;
   o.shadowPosition = cameraData.shadowTransform * cameraData.worldTransform * position;
   o.mirrored   = orientation * determinant(float3x3(cameraData.worldTransform[0].xyz,
                                                     cameraData.worldTransform[1].xyz,
@@ -155,6 +157,7 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   o.meshTexcoord = vd.texcoord;
   o.color      = vd.color;
   o.modelColor = instance.color;
+  o.coverage = instance.coverage;
   o.shadowPosition = cameraData.shadowTransform * instance.modelView * position;
   o.mirrored   = orientation * determinant(float3x3(instance.modelView[0].xyz,
                                                     instance.modelView[1].xyz,
@@ -183,6 +186,21 @@ fragment half4 simpleFrag3d( v2f in [[stage_in]], texture2d< half, access::sampl
     return ApplyFog(half4(illum, in.color.a * texel.a), in.viewDepth, in.viewPosition, cameraData);
 }
 
+// Fixed 8x8 Bayer mask. Adjacent intervals partition the same samples exactly.
+inline void ApplyModelCoverage(float2 pixel, float2 interval)
+{
+  if (interval.x <= 0 && interval.y >= 1) return;
+  uint2 p = uint2(pixel) & 7;
+  uint rank = 0;
+  for (uint bit = 0; bit < 3; ++bit)
+  {
+    uint x = (p.x >> bit) & 1, y = (p.y >> bit) & 1;
+    rank |= ((x ^ y) * 2 + y) << (4 - 2 * bit);
+  }
+  float threshold = (float(rank) + .5f) / 64.f;
+  if (threshold < interval.x || threshold >= interval.y) discard_fragment();
+}
+
 fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]],
                            device const Uniforms          &cameraData [[buffer(1)]],
                            constant MaterialUniforms      &material [[buffer(5)]],
@@ -198,6 +216,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
 #endif
 )
 {
+  ApplyModelCoverage(in.position.xy, in.coverage);
   // Fragment culling allows mixed mirrored placements in one instance batch.
   const bool front = frontFacing != bool(in.mirrored);
   if (!front && material.parameters.z == 0)
@@ -344,6 +363,7 @@ fragment void shadowModelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_fa
                                 sampler colorSampler [[sampler(0)]],
                            texture2d<half> normalMap [[texture(2)]])
 {
+  ApplyModelCoverage(in.position.xy, in.coverage);
   if ((frontFacing == bool(in.mirrored)) && material.parameters.z == 0)
     discard_fragment();
   if (material.parameters.x == 1)

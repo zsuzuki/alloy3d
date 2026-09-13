@@ -224,23 +224,25 @@ int main(int argc, char **argv)
         Check(render(2) == later, "same forest time is not deterministic");
         auto detailCounts = [&]
         {
-          std::array<size_t, 4> counts{};
+          std::array<float, 4> counts{};
           scene.Draw(
               [&](size_t asset, auto instances)
               {
                 for (size_t variant = 0; variant < forest::Trunks.size(); ++variant)
                 {
+                  float coverage = 0;
+                  for (const auto &instance : instances) coverage += instance.coverage.y-instance.coverage.x;
                   if (forest::IsBillboard(asset) && variant == 0)
-                    counts[3] += instances.size();
+                    counts[3] += coverage;
                   if (asset == forest::Trunks[variant])
                     counts[0] += instances.size();
                   if (asset == forest::Crowns[variant])
-                    counts[1] += instances.size();
+                    counts[1] += coverage;
                   if (asset == forest::DistantCrowns[variant])
-                    counts[2] += instances.size();
+                    counts[2] += coverage;
                 }
               });
-          Check(counts[0] == counts[1] + counts[2] + counts[3],
+          Check(std::abs(counts[0] - counts[1] - counts[2] - counts[3]) < .001f,
                 "tree disappeared during detail selection");
           return counts;
         };
@@ -254,7 +256,7 @@ int main(int argc, char **argv)
         scene.travel = 0;
         scene.Camera(camera, 1);
         Check(render(2) == later, "returning camera changed forest layout or wind");
-        std::printf("trees=%zu near=%zu middle=%zu billboards=%zu\n",
+        std::printf("trees=%.0f near=%.1f middle=%.1f billboards=%.1f\n",
                     initialDetail[0],
                     initialDetail[1],
                     initialDetail[2],

@@ -11,5 +11,7 @@ struct ModelInstance
   simd_float3 rotation = {0, 0, 0};
   simd_float3 scale    = {1, 1, 1};
   simd_float4 color    = {1, 1, 1, 1};
+  // Dither coverage interval in [0,1]. Complementary intervals crossfade without blending.
+  simd_float2 coverage = {0, 1};
 };
 } // namespace alloy3d

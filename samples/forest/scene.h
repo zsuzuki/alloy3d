@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <alloy3d/camera.h>
 #include <alloy3d/lighting.h>
+#include <alloy3d/lod.h>
 #include <alloy3d/model_instance.h>
 #include <alloy3d/model_texture.h>
 #include <array>
@@ -189,6 +190,7 @@ class Scene
   size_t                                                         treeCount_ = 0;
   uint32_t                                                       seed_      = 0x197307;
   std::array<std::vector<alloy3d::ModelInstance>, Assets.size()> base_, live_;
+  std::vector<alloy3d::ModelInstance> lodWood_, lodLeaves_;
   float                                                          Random(float low, float high)
   {
     seed_ = seed_ * 1664525u + 1013904223u;
@@ -416,41 +418,52 @@ public:
       }
     for (size_t asset = BillboardBegin; asset < ThicketBegin; ++asset)
       live_[asset].clear();
-    // Three detail levels share crown placement and wind phase.
-    // A camera-distance choice keeps dense, curved leaves on nearby trees.
-    simd_float2 eye = {std::sin(yaw) * 3.f, 14.f - travel};
+    // Screen-size LOD with complementary coverage. Both representations stay opaque.
+    simd_float2 eye = {cameraEye.x, cameraEye.z};
+    alloy3d::CameraData lodCamera;
+    Camera(lodCamera, 1);
     for (size_t variant = 0; variant < Crowns.size(); ++variant)
     {
-      auto &wood = live_[Crowns[variant]], &leaves = live_[Foliage[variant]];
-      auto &farWood = live_[DistantCrowns[variant]], &farLeaves = live_[DistantFoliage[variant]];
-      farWood.clear();
-      farLeaves.clear();
-      size_t nearCount = 0;
+      lodWood_.swap(live_[Crowns[variant]]);
+      lodLeaves_.swap(live_[Foliage[variant]]);
+      const auto &wood = lodWood_, &leaves = lodLeaves_;
+      live_[Crowns[variant]].clear();
+      live_[Foliage[variant]].clear();
+      live_[DistantCrowns[variant]].clear();
+      live_[DistantFoliage[variant]].clear();
       for (size_t i = 0; i < wood.size(); ++i)
       {
-        simd_float2 delta = {wood[i].position.x - eye.x, wood[i].position.z - eye.y};
-        if (settings.billboards && simd_length_squared(delta) > 38.f * 38.f)
+        const std::array<float,2> thresholds = {.54f,.34f};
+        auto transition = alloy3d::SelectLod3D(
+            alloy3d::ProjectedHeight3D(lodCamera, wood[i].position + simd_make_float3(0,5*wood[i].scale.y,0),
+                                       6*wood[i].scale.y),
+            std::span(thresholds.data(), settings.billboards ? 2 : 1));
+        auto placeLevel = [&](size_t level, simd_float2 coverage)
         {
-          auto  sprite = wood[i];
-          float facing = std::atan2(-delta.x, -delta.y);
-          int   view   = int(std::floor((facing - sprite.rotation.y) * 8.f / 6.28318530718f + .5f));
-          view         = (view % 8 + 8) % 8;
-          sprite.rotation.y = facing;
-          live_[BillboardAsset(variant, view)].push_back(sprite);
-        }
-        else if (simd_length_squared(delta) > 24.f * 24.f)
-        {
-          farWood.push_back(wood[i]);
-          farLeaves.push_back(leaves[i]);
-        }
+          if (coverage.y <= coverage.x) return;
+          auto w = wood[i], l = leaves[i];
+          w.coverage = l.coverage = coverage;
+          if (level < 2)
+          {
+            live_[level == 0 ? Crowns[variant] : DistantCrowns[variant]].push_back(w);
+            live_[level == 0 ? Foliage[variant] : DistantFoliage[variant]].push_back(l);
+          }
+          else
+          {
+            float facing = std::atan2(eye.x-w.position.x, eye.y-w.position.z);
+            int view = int(std::floor((facing-w.rotation.y)*8.f/6.28318530718f+.5f));
+            view = (view%8+8)%8;
+            w.rotation.y = facing;
+            live_[BillboardAsset(variant,view)].push_back(w);
+          }
+        };
+        if (transition.nearLevel == transition.farLevel) placeLevel(transition.nearLevel,simd_float2{0,1});
         else
         {
-          wood[nearCount]     = wood[i];
-          leaves[nearCount++] = leaves[i];
+          placeLevel(transition.nearLevel,simd_float2{0,1-transition.farWeight});
+          placeLevel(transition.farLevel,simd_float2{1-transition.farWeight,1});
         }
       }
-      wood.resize(nearCount);
-      leaves.resize(nearCount);
     }
     for (size_t asset = ThicketBegin; asset < Droplet; ++asset)
       for (size_t i = 0; i < base_[asset].size(); ++i)

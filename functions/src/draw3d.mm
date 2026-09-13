@@ -63,6 +63,7 @@ struct DrawModel3D
   float normalStrength = 1;
   bool materialDetail = false;
   alloy3d::ModelTransmission3D transmission;
+  simd_float2 coverage = {0,1};
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -80,7 +81,7 @@ struct DrawModel3D
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
         textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), normalStrength(other.normalStrength),
-        materialDetail(other.materialDetail), transmission(other.transmission), instanceOffset(other.instanceOffset),
+        materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
   }
@@ -91,7 +92,7 @@ struct DrawModel3D
     shader = source.shader; parameters = source.parameters; highlight = source.highlight;
     textureTransform = source.textureTransform; maxAnisotropy = source.maxAnisotropy;
     normalStrength = source.normalStrength; materialDetail = source.materialDetail;
-    transmission = source.transmission;
+    transmission = source.transmission; coverage = source.coverage;
   }
   bool sameStyle(const DrawModel3D &other) const
   {
@@ -196,6 +197,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   id<MTLRenderPipelineState>                          pipelineStateModelInstances_[2];
   bool transparentBatching_;
   bool frustumCulling_;
+  simd_float2 modelCoverage_;
   id<MTLDepthStencilState>                            modelDepth_[2];
   std::vector<TransparentPart>                        transparentParts_;
   id<MTLBuffer>              uniformBuffer_[3];
@@ -517,6 +519,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
 {
   [super init];
 
+  modelCoverage_ = {0,1};
   shaderOwner_      = std::make_shared<const int>(0);
   device_           = view.device;
   colorFormat_      = view.colorPixelFormat;
@@ -1054,6 +1057,13 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   fogInverseRange_ = inverseRange;
 }
 
+- (void)setModelCoverage:(simd_float2)interval
+{
+  if (!simd_all(interval >= 0) || !simd_all(interval <= 1) || interval.x > interval.y)
+    throw std::invalid_argument("Alloy3D coverage requires 0 <= start <= end <= 1");
+  modelCoverage_ = interval;
+}
+
 - (void)setFrustumCulling:(bool)enabled
 {
   frustumCulling_ = enabled;
@@ -1104,6 +1114,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
         simd_mul(view, BuildModelMatrix(source.position, source.rotation, source.scale));
     target.normalTransform = alloy3d::metal::NormalMatrix(target.modelView);
     target.color           = source.color;
+    target.coverage        = source.coverage;
   }
   instancesPrepared_ = true;
 }
@@ -1187,6 +1198,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       MaterialUniforms material{
           {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)},
           {}, simd_make_float4(draw.textureTransform.scale, draw.textureTransform.offset)};
+      material.coverage = draw.coverage;
       [encoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
       [encoder setFragmentBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
       [encoder setVertexBuffer:[part vertexBufferForPage:pageIndex_] offset:0 atIndex:0];
@@ -1230,6 +1242,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   drawModelList_.back().normalStrength = modelNormalMapping_.strength;
   drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
   drawModelList_.back().transmission = modelTransmission_;
+  drawModelList_.back().coverage = modelCoverage_;
 }
 
 - (void)drawModelInstances:(MetalModel *)model
@@ -1237,6 +1250,9 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
 {
   if (model == nil || !model.loaded || instances.empty())
     return;
+  for (const auto &i : instances)
+    if (!simd_all(i.coverage >= 0) || !simd_all(i.coverage <= 1) || i.coverage.x > i.coverage.y)
+      throw std::invalid_argument("Alloy3D instance coverage requires 0 <= start <= end <= 1");
   const NSUInteger limit = device_.maxBufferLength / sizeof(ModelInstanceUniforms);
   if (instances.size() > limit || modelInstances_.size() > limit - instances.size())
     throw std::length_error("Alloy3D instances exceed device capacity");
@@ -1262,6 +1278,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       drawModelList_.back().normalStrength = modelNormalMapping_.strength;
       drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
       drawModelList_.back().transmission = modelTransmission_;
+      drawModelList_.back().coverage = i.coverage;
     }
     return;
   }
@@ -1398,6 +1415,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
                                   part.occlusionStrength,
                                   float((part.roughnessTexture ? 1 : 0) | (part.occlusionTexture ? 2 : 0))};
         material.transmission = simd_make_float4(dmodel.transmission.color, dmodel.transmission.strength);
+        material.coverage = dmodel.coverage;
         [renderEncoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
         [renderEncoder setFragmentBytes:&material
                                  length:sizeof(material)
@@ -1507,6 +1525,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
           instances[i].modelView = simd_mul(mdlview, BuildModelMatrix(source.position, source.rotation, source.scale));
           instances[i].normalTransform = alloy3d::metal::NormalMatrix(instances[i].modelView);
           instances[i].color = source.color;
+          instances[i].coverage = source.coverage;
         }
       }
       for (size_t first = 0; first < transparentParts_.size();)

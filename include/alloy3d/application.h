@@ -95,10 +95,11 @@ public:
   virtual bool SetModelHighlight3D(const ModelHighlight3D &highlight) { return false; }
   virtual bool SetModelMaterialDetail3D(const ModelMaterialDetail3D &detail) { return false; }
   virtual bool SetModelTransmission3D(const ModelTransmission3D &transmission) { return false; }
-  // Frame-level optimization: coalesce compatible parts after transparency sorting.
-  // Disabled by default; sorting order and depth-write policy are preserved.
+  // Per-draw dither interval, default [0,1]. Instances provide their own interval.
+  virtual bool SetModelCoverage3D(simd_float2 interval) { return false; }
   // Frame-level conservative color-pass culling. Shadow casters remain submitted.
   virtual bool SetFrustumCulling3D(bool enabled) { return false; }
+  // Frame-level batching after sorting. Both optimizations default to disabled.
   virtual bool SetTransparentBatching3D(bool enabled) { return false; }
 
   // Transform base-color UVs, including MASK shadow coverage and custom surface UVs.
@@ -162,7 +163,11 @@ public:
   virtual void DrawModelInstances3D(ModelPtr model, std::span<const ModelInstance> instances)
   {
     for (const auto &instance : instances)
+    {
+      SetModelCoverage3D(instance.coverage);
       DrawModel3D(model, instance.position, instance.rotation, instance.scale, instance.color);
+    }
+    SetModelCoverage3D({0,1});
   }
   virtual void     DrawModel3D(ModelPtr model,
                                simd_float3 position,
