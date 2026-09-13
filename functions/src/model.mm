@@ -1,8 +1,8 @@
 //
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
-#import <alloy3d/metal/model.h>
 #include "shader_def.h"
+#import <alloy3d/metal/model.h>
 
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
@@ -50,11 +50,11 @@ static_assert(sizeof(GpuModelVertex) == sizeof(VertexDataModel3D));
 // Per-frame pose contains only transform values, never names or hierarchy containers.
 struct PoseData
 {
-  simd_float3             translation = simd_make_float3(0.0f, 0.0f, 0.0f);
-  simd_float4             rotation    = simd_make_float4(0.0f, 0.0f, 0.0f, 1.0f);
-  simd_float3             scale       = simd_make_float3(1.0f, 1.0f, 1.0f);
-  simd_float4x4           matrix      = matrix_identity_float4x4;
-  bool                    hasMatrix   = false;
+  simd_float3   translation = simd_make_float3(0.0f, 0.0f, 0.0f);
+  simd_float4   rotation    = simd_make_float4(0.0f, 0.0f, 0.0f, 1.0f);
+  simd_float3   scale       = simd_make_float3(1.0f, 1.0f, 1.0f);
+  simd_float4x4 matrix      = matrix_identity_float4x4;
+  bool          hasMatrix   = false;
 };
 
 struct NodeData
@@ -118,7 +118,8 @@ simd_float3 TransformDirection(const simd_float4x4 &m, simd_float3 n)
 {
   auto v = simd_mul(m, simd_make_float4(n.x, n.y, n.z, 0.0f));
   auto d = simd_make_float3(v.x, v.y, v.z);
-  return simd_length_squared(d) > 0.000001f ? simd_normalize(d) : simd_make_float3(0.0f, 1.0f, 0.0f);
+  return simd_length_squared(d) > 0.000001f ? simd_normalize(d)
+                                            : simd_make_float3(0.0f, 1.0f, 0.0f);
 }
 
 simd_float4 NormalizeQuat(simd_float4 q)
@@ -182,7 +183,8 @@ simd_float4x4 MatrixFromTRS(simd_float3 translation, simd_float4 rotation, simd_
 
 int NodeIndex(const cgltf_data *data, const cgltf_node *node)
 {
-  if (data == nullptr || node == nullptr || node < data->nodes || node >= data->nodes + data->nodes_count)
+  if (data == nullptr || node == nullptr || node < data->nodes ||
+      node >= data->nodes + data->nodes_count)
   {
     return NoIndex;
   }
@@ -191,7 +193,8 @@ int NodeIndex(const cgltf_data *data, const cgltf_node *node)
 
 int SkinIndex(const cgltf_data *data, const cgltf_skin *skin)
 {
-  if (data == nullptr || skin == nullptr || skin < data->skins || skin >= data->skins + data->skins_count)
+  if (data == nullptr || skin == nullptr || skin < data->skins ||
+      skin >= data->skins + data->skins_count)
   {
     return NoIndex;
   }
@@ -237,16 +240,17 @@ id<MTLTexture> LoadEmbeddedTexture(cgltf_texture *texture, id<MTLDevice> device,
 
   auto *view       = image->buffer_view;
   auto *bufferBase = view->buffer != nullptr ? static_cast<uint8_t *>(view->buffer->data) : nullptr;
-  auto *bufferData = view->data != nullptr ? static_cast<uint8_t *>(view->data)
-                                           : bufferBase != nullptr ? bufferBase + view->offset : nullptr;
+  auto *bufferData = view->data != nullptr   ? static_cast<uint8_t *>(view->data)
+                     : bufferBase != nullptr ? bufferBase + view->offset
+                                             : nullptr;
   if (bufferData == nullptr || view->size == 0)
   {
     return nil;
   }
 
-  NSData *data = [NSData dataWithBytes:bufferData length:view->size];
-  auto    loader = [[MTKTextureLoader alloc] initWithDevice:device];
-  NSError *error = nil;
+  NSData       *data    = [NSData dataWithBytes:bufferData length:view->size];
+  auto          loader  = [[MTKTextureLoader alloc] initWithDevice:device];
+  NSError      *error   = nil;
   NSDictionary *options = @{
     MTKTextureLoaderOptionSRGB : @(srgb),
     MTKTextureLoaderOptionAllocateMipmaps : @YES,
@@ -344,18 +348,20 @@ std::vector<NodeData> BuildNodes(const cgltf_data *data, std::vector<PoseData> &
   bindPose.resize(data->nodes_count);
   for (cgltf_size i = 0; i < data->nodes_count; i++)
   {
-    const auto &src = data->nodes[i];
-    auto       &dst = nodes[i];
+    const auto &src  = data->nodes[i];
+    auto       &dst  = nodes[i];
     auto       &pose = bindPose[i];
-    dst.name        = src.name != nullptr ? src.name : "";
-    dst.parent      = NodeIndex(data, src.parent);
+    dst.name         = src.name != nullptr ? src.name : "";
+    dst.parent       = NodeIndex(data, src.parent);
     if (src.has_translation)
     {
-      pose.translation = simd_make_float3(src.translation[0], src.translation[1], src.translation[2]);
+      pose.translation =
+          simd_make_float3(src.translation[0], src.translation[1], src.translation[2]);
     }
     if (src.has_rotation)
     {
-      pose.rotation = simd_make_float4(src.rotation[0], src.rotation[1], src.rotation[2], src.rotation[3]);
+      pose.rotation =
+          simd_make_float4(src.rotation[0], src.rotation[1], src.rotation[2], src.rotation[3]);
     }
     if (src.has_scale)
     {
@@ -500,50 +506,50 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
                                      skinIndex:(int)skinIndex
                                         device:(nonnull id<MTLDevice>)device;
 - (void)updateWithNodeWorldMatrices:(const std::vector<simd_float4x4> &)nodeWorldMatrices
-                               skins:(const std::vector<SkinData> &)skins;
+                              skins:(const std::vector<SkinData> &)skins;
 
 @end
 
 @implementation ModelPart
 {
-  id<MTLDevice>             device_;
-  id<MTLBuffer>             vertexBuffer_;
-  id<MTLBuffer>             indexBuffer_;
-  id<MTLBuffer>             jointMatrixBuffers_[3];
-  bool                      jointMatricesDirty_[3];
-  id<MTLTexture>            texture_;
-  id<MTLTexture>            normalTexture_;
-  float                    normalScale_;
-  id<MTLTexture>            roughnessTexture_, occlusionTexture_;
-  float                    roughness_, occlusionStrength_;
-  NSUInteger                indexCount_;
-  simd_float4               baseColor_;
-  std::vector<simd_float4x4> jointMatrices_;
-  int                       nodeIndex_;
-  int                       skinIndex_;
+  id<MTLDevice>                                         device_;
+  id<MTLBuffer>                                         vertexBuffer_;
+  id<MTLBuffer>                                         indexBuffer_;
+  id<MTLBuffer>                                         jointMatrixBuffers_[3];
+  bool                                                  jointMatricesDirty_[3];
+  id<MTLTexture>                                        texture_;
+  id<MTLTexture>                                        normalTexture_;
+  float                                                 normalScale_;
+  id<MTLTexture>                                        roughnessTexture_, occlusionTexture_;
+  float                                                 roughness_, occlusionStrength_;
+  NSUInteger                                            indexCount_;
+  simd_float4                                           baseColor_;
+  std::vector<simd_float4x4>                            jointMatrices_;
+  int                                                   nodeIndex_;
+  int                                                   skinIndex_;
   NSUInteger                                            alphaMode_;
   float                                                 alphaCutoff_;
   BOOL                                                  doubleSided_, unlit_;
   std::shared_ptr<const std::vector<alloy3d::Bounds3D>> influenceBounds_;
   simd_float3                                           sortCenter_;
-  alloy3d::Bounds3D renderBounds_;
+  alloy3d::Bounds3D                                     renderBounds_;
   bool                                                  sortCenterDirty_;
 }
 
-@synthesize indexBuffer  = indexBuffer_;
-@synthesize texture      = texture_;
-@synthesize normalTexture = normalTexture_;
-@synthesize normalScale = normalScale_;
-@synthesize roughnessTexture = roughnessTexture_;
-@synthesize occlusionTexture = occlusionTexture_;
-@synthesize roughness = roughness_;
+@synthesize indexBuffer       = indexBuffer_;
+@synthesize texture           = texture_;
+@synthesize normalTexture     = normalTexture_;
+@synthesize normalScale       = normalScale_;
+@synthesize roughnessTexture  = roughnessTexture_;
+@synthesize occlusionTexture  = occlusionTexture_;
+@synthesize roughness         = roughness_;
 @synthesize occlusionStrength = occlusionStrength_;
-@synthesize indexCount   = indexCount_;
-@synthesize baseColor    = baseColor_;
-@synthesize alphaMode    = alphaMode_;
-@synthesize alphaCutoff  = alphaCutoff_;
-@synthesize doubleSided  = doubleSided_;
-@synthesize unlit        = unlit_;
+@synthesize indexCount        = indexCount_;
+@synthesize baseColor         = baseColor_;
+@synthesize alphaMode         = alphaMode_;
+@synthesize alphaCutoff       = alphaCutoff_;
+@synthesize doubleSided       = doubleSided_;
+@synthesize unlit             = unlit_;
 
 - (nullable id<MTLBuffer>)vertexBuffer
 {
@@ -552,9 +558,9 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 - (nonnull instancetype)initWithVertexBuffer:(nonnull id<MTLBuffer>)vertexBuffer
                                  indexBuffer:(nonnull id<MTLBuffer>)indexBuffer
-                                      texture:(nullable id<MTLTexture>)texture
-                                   indexCount:(NSUInteger)indexCount
-                                    baseColor:(simd_float4)baseColor
+                                     texture:(nullable id<MTLTexture>)texture
+                                  indexCount:(NSUInteger)indexCount
+                                   baseColor:(simd_float4)baseColor
 {
   self = [super init];
   if (self != nil)
@@ -584,33 +590,36 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   self = [super init];
   if (self != nil)
   {
-    device_         = [device retain];
-    texture_        = [texture retain];
-    indexCount_     = indices.size();
-    baseColor_      = baseColor;
-    nodeIndex_      = nodeIndex;
-    skinIndex_      = skinIndex;
+    device_     = [device retain];
+    texture_    = [texture retain];
+    indexCount_ = indices.size();
+    baseColor_  = baseColor;
+    nodeIndex_  = nodeIndex;
+    skinIndex_  = skinIndex;
 
     std::vector<GpuModelVertex> gpuVertices(vertices.size());
     for (size_t i = 0; i < vertices.size(); i++)
     {
-      const auto &src = vertices[i];
+      const auto &src         = vertices[i];
       gpuVertices[i].position = src.position;
       gpuVertices[i].normal   = src.normal;
       gpuVertices[i].texcoord = src.texcoord;
-      gpuVertices[i].joints   = simd_make_uint4(src.joints[0], src.joints[1], src.joints[2], src.joints[3]);
-      gpuVertices[i].weights  = src.skinned ? simd_make_float4(src.weights[0], src.weights[1], src.weights[2], src.weights[3])
-                                            : simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-      gpuVertices[i].color    = vcvt_f16_f32(src.color);
-      gpuVertices[i].tangent  = src.tangent;
+      gpuVertices[i].joints =
+          simd_make_uint4(src.joints[0], src.joints[1], src.joints[2], src.joints[3]);
+      gpuVertices[i].weights =
+          src.skinned
+              ? simd_make_float4(src.weights[0], src.weights[1], src.weights[2], src.weights[3])
+              : simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+      gpuVertices[i].color   = vcvt_f16_f32(src.color);
+      gpuVertices[i].tangent = src.tangent;
     }
 
     vertexBuffer_ = [device newBufferWithBytes:gpuVertices.data()
                                         length:sizeof(GpuModelVertex) * gpuVertices.size()
                                        options:MTLResourceStorageModeShared];
-    indexBuffer_    = [device newBufferWithBytes:indices.data()
-                                          length:sizeof(uint32_t) * indices.size()
-                                         options:MTLResourceStorageModeShared];
+    indexBuffer_  = [device newBufferWithBytes:indices.data()
+                                        length:sizeof(uint32_t) * indices.size()
+                                       options:MTLResourceStorageModeShared];
     jointMatrices_.push_back(matrix_identity_float4x4);
     std::fill(std::begin(jointMatricesDirty_), std::end(jointMatricesDirty_), true);
     for (auto &jointMatrixBuffer : jointMatrixBuffers_)
@@ -628,15 +637,18 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
                  vertices:(const std::vector<SourceVertex> &)vertices
                jointCount:(NSUInteger)jointCount
 {
-  alphaMode_   = material ? material->alpha_mode : cgltf_alpha_mode_opaque;
-  alphaCutoff_ = material ? material->alpha_cutoff : .5f;
-  doubleSided_ = material && material->double_sided;
-  unlit_       = material && material->unlit;
-  roughness_ = material && material->has_pbr_metallic_roughness
-                   ? material->pbr_metallic_roughness.roughness_factor : 1.f;
-  roughness_ = std::isfinite(roughness_) ? std::clamp(roughness_, 0.f, 1.f) : 1.f;
-  auto loadData = [&](const cgltf_texture_view &view) -> id<MTLTexture> {
-    if (!view.texture) return nil;
+  alphaMode_    = material ? material->alpha_mode : cgltf_alpha_mode_opaque;
+  alphaCutoff_  = material ? material->alpha_cutoff : .5f;
+  doubleSided_  = material && material->double_sided;
+  unlit_        = material && material->unlit;
+  roughness_    = material && material->has_pbr_metallic_roughness
+                      ? material->pbr_metallic_roughness.roughness_factor
+                      : 1.f;
+  roughness_    = std::isfinite(roughness_) ? std::clamp(roughness_, 0.f, 1.f) : 1.f;
+  auto loadData = [&](const cgltf_texture_view &view) -> id<MTLTexture>
+  {
+    if (!view.texture)
+      return nil;
     if (view.texcoord != 0 || view.has_transform)
     {
       NSLog(@"Alloy3D material data textures currently require untransformed TEXCOORD_0");
@@ -647,10 +659,13 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   if (material)
   {
     const auto &rough = material->pbr_metallic_roughness.metallic_roughness_texture;
-    const auto &ao = material->occlusion_texture;
-    if (material->has_pbr_metallic_roughness) roughnessTexture_ = loadData(rough);
-    occlusionTexture_ = roughnessTexture_ && ao.texture == rough.texture && ao.texcoord == rough.texcoord && !ao.has_transform
-                            ? [roughnessTexture_ retain] : loadData(ao);
+    const auto &ao    = material->occlusion_texture;
+    if (material->has_pbr_metallic_roughness)
+      roughnessTexture_ = loadData(rough);
+    occlusionTexture_  = roughnessTexture_ && ao.texture == rough.texture &&
+                                 ao.texcoord == rough.texcoord && !ao.has_transform
+                             ? [roughnessTexture_ retain]
+                             : loadData(ao);
     occlusionStrength_ = std::isfinite(ao.scale) ? std::clamp(ao.scale, 0.f, 1.f) : 1.f;
   }
   if (material && material->normal_texture.texture)
@@ -661,7 +676,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     else
     {
       normalTexture_ = LoadEmbeddedTexture(normal.texture, device_, false);
-      normalScale_ = std::isfinite(normal.scale) ? normal.scale : 1.f;
+      normalScale_   = std::isfinite(normal.scale) ? normal.scale : 1.f;
     }
   }
   auto bounds =
@@ -761,23 +776,23 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
                                             baseColor:baseColor_];
   try
   {
-    part->nodeIndex_     = nodeIndex_;
-    part->skinIndex_     = skinIndex_;
-    part->alphaMode_       = alphaMode_;
-    part->alphaCutoff_     = alphaCutoff_;
-    part->doubleSided_     = doubleSided_;
-    part->unlit_           = unlit_;
-    part->normalTexture_   = [normalTexture_ retain];
-    part->normalScale_     = normalScale_;
-    part->roughnessTexture_ = [roughnessTexture_ retain];
-    part->occlusionTexture_ = [occlusionTexture_ retain];
-    part->roughness_ = roughness_;
+    part->nodeIndex_         = nodeIndex_;
+    part->skinIndex_         = skinIndex_;
+    part->alphaMode_         = alphaMode_;
+    part->alphaCutoff_       = alphaCutoff_;
+    part->doubleSided_       = doubleSided_;
+    part->unlit_             = unlit_;
+    part->normalTexture_     = [normalTexture_ retain];
+    part->normalScale_       = normalScale_;
+    part->roughnessTexture_  = [roughnessTexture_ retain];
+    part->occlusionTexture_  = [occlusionTexture_ retain];
+    part->roughness_         = roughness_;
     part->occlusionStrength_ = occlusionStrength_;
-    part->influenceBounds_ = influenceBounds_;
-    part->sortCenter_      = sortCenter_;
-    part->renderBounds_    = renderBounds_;
-    part->sortCenterDirty_ = sortCenterDirty_;
-    part->jointMatrices_ = jointMatrices_;
+    part->influenceBounds_   = influenceBounds_;
+    part->sortCenter_        = sortCenter_;
+    part->renderBounds_      = renderBounds_;
+    part->sortCenterDirty_   = sortCenterDirty_;
+    part->jointMatrices_     = jointMatrices_;
     return part;
   }
   catch (...)
@@ -815,10 +830,12 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   const size_t requiredLength = sizeof(simd_float4x4) * jointCount;
   if ((buffer == nil || buffer.length < requiredLength) && device_ != nil)
   {
-    auto replacement = [device_ newBufferWithLength:requiredLength options:MTLResourceStorageModeShared];
-    if (replacement == nil) throw std::bad_alloc();
+    auto replacement = [device_ newBufferWithLength:requiredLength
+                                            options:MTLResourceStorageModeShared];
+    if (replacement == nil)
+      throw std::bad_alloc();
     [buffer release];
-    buffer = replacement;
+    buffer                             = replacement;
     jointMatricesDirty_[pageIndex % 3] = true;
     jointMatrixBuffers_[pageIndex % 3] = buffer;
   }
@@ -831,14 +848,15 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 }
 
 - (void)updateWithNodeWorldMatrices:(const std::vector<simd_float4x4> &)nodeWorldMatrices
-                               skins:(const std::vector<SkinData> &)skins
+                              skins:(const std::vector<SkinData> &)skins
 {
   std::fill(std::begin(jointMatricesDirty_), std::end(jointMatricesDirty_), true);
   sortCenterDirty_          = true;
-  auto nodeWorld = nodeIndex_ >= 0 && nodeIndex_ < nodeWorldMatrices.size()
-                       ? nodeWorldMatrices[nodeIndex_]
-                       : matrix_identity_float4x4;
-  const SkinData *skin = skinIndex_ >= 0 && skinIndex_ < skins.size() ? &skins[skinIndex_] : nullptr;
+  auto            nodeWorld = nodeIndex_ >= 0 && nodeIndex_ < nodeWorldMatrices.size()
+                                  ? nodeWorldMatrices[nodeIndex_]
+                                  : matrix_identity_float4x4;
+  const SkinData *skin =
+      skinIndex_ >= 0 && skinIndex_ < skins.size() ? &skins[skinIndex_] : nullptr;
   if (skin == nullptr)
   {
     jointMatrices_.resize(1);
@@ -849,7 +867,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   jointMatrices_.resize(std::max<size_t>(1, skin->joints.size()));
   for (size_t i = 0; i < skin->joints.size(); i++)
   {
-    auto jointNode = skin->joints[i];
+    auto jointNode    = skin->joints[i];
     jointMatrices_[i] = jointNode >= 0 && jointNode < nodeWorldMatrices.size()
                             ? simd_mul(nodeWorldMatrices[jointNode], skin->inverseBindMatrices[i])
                             : matrix_identity_float4x4;
@@ -860,7 +878,9 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 @interface MetalModel ()
 
-- (void)samplePoseForAnimation:(NSUInteger)index time:(float)seconds into:(std::vector<PoseData> &)pose;
+- (void)samplePoseForAnimation:(NSUInteger)index
+                          time:(float)seconds
+                          into:(std::vector<PoseData> &)pose;
 - (void)applyPose:(const std::vector<PoseData> &)pose;
 - (void)updatePoseAtTime:(float)seconds;
 
@@ -868,16 +888,16 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 @implementation MetalModel
 {
-  BOOL                           loaded_;
-  NSArray<ModelPart *>          *parts_;
+  BOOL                                  loaded_;
+  NSArray<ModelPart *>                 *parts_;
   std::shared_ptr<const ModelAssetData> asset_;
-  std::vector<PoseData>          poseScratch_[2];
-  std::vector<simd_float4x4>     localMatrices_;
-  std::vector<bool>              visited_;
-  std::vector<simd_float4x4>     currentWorldMatrices_;
+  std::vector<PoseData>                 poseScratch_[2];
+  std::vector<simd_float4x4>            localMatrices_;
+  std::vector<bool>                     visited_;
+  std::vector<simd_float4x4>            currentWorldMatrices_;
 
-  NSUInteger                     animationIndex_;
-  float                          currentTime_;
+  NSUInteger animationIndex_;
+  float      currentTime_;
 }
 
 @synthesize loaded = loaded_;
@@ -939,7 +959,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
         auto nodeIndex = NodeIndex(data, node);
         if (node->mesh != nullptr)
         {
-          for (cgltf_size primitiveIndex = 0; primitiveIndex < node->mesh->primitives_count; primitiveIndex++)
+          for (cgltf_size primitiveIndex = 0; primitiveIndex < node->mesh->primitives_count;
+               primitiveIndex++)
           {
             const auto &primitive = node->mesh->primitives[primitiveIndex];
             if (primitive.type != cgltf_primitive_type_triangles)
@@ -999,8 +1020,12 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
               vertices[vertexIndex].color = baseColor * vertexColor;
 
               vertices[vertexIndex].skinned = false;
-              std::fill(std::begin(vertices[vertexIndex].joints), std::end(vertices[vertexIndex].joints), 0);
-              std::fill(std::begin(vertices[vertexIndex].weights), std::end(vertices[vertexIndex].weights), 0.0f);
+              std::fill(std::begin(vertices[vertexIndex].joints),
+                        std::end(vertices[vertexIndex].joints),
+                        0);
+              std::fill(std::begin(vertices[vertexIndex].weights),
+                        std::end(vertices[vertexIndex].weights),
+                        0.0f);
               if (joints != nullptr && weights != nullptr && skinIndex != NoIndex)
               {
                 cgltf_uint  jointValues[4]  = {};
@@ -1041,7 +1066,9 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
               NSLog(@"Skipping glTF primitive with invalid triangle index count.");
               continue;
             }
-            if (std::any_of(indices.begin(), indices.end(), [&](uint32_t index) { return index >= vertices.size(); }))
+            if (std::any_of(indices.begin(),
+                            indices.end(),
+                            [&](uint32_t index) { return index >= vertices.size(); }))
             {
               NSLog(@"Skipping glTF primitive with out-of-range indices.");
               continue;
@@ -1051,9 +1078,9 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
             {
               for (size_t i = 0; i < indices.size(); i += 3)
               {
-                auto i0 = indices[i + 0];
-                auto i1 = indices[i + 1];
-                auto i2 = indices[i + 2];
+                auto i0     = indices[i + 0];
+                auto i1     = indices[i + 1];
+                auto i2     = indices[i + 2];
                 auto normal = simd_cross(vertices[i1].position - vertices[i0].position,
                                          vertices[i2].position - vertices[i0].position);
                 if (simd_length_squared(normal) > 0.000001f)
@@ -1073,16 +1100,18 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
             }
 
             auto material = primitive.material;
-            auto texture = LoadEmbeddedTexture(material && material->has_pbr_metallic_roughness
-                                                   ? material->pbr_metallic_roughness.base_color_texture.texture
-                                                   : nullptr, device);
-            auto part    = [[ModelPart alloc] initWithSourceVertices:vertices
-                                                             indices:indices
-                                                             texture:texture
-                                                           baseColor:baseColor
-                                                           nodeIndex:nodeIndex
-                                                           skinIndex:skinIndex
-                                                              device:device];
+            auto texture  = LoadEmbeddedTexture(
+                material && material->has_pbr_metallic_roughness
+                    ? material->pbr_metallic_roughness.base_color_texture.texture
+                    : nullptr,
+                device);
+            auto part = [[ModelPart alloc] initWithSourceVertices:vertices
+                                                          indices:indices
+                                                          texture:texture
+                                                        baseColor:baseColor
+                                                        nodeIndex:nodeIndex
+                                                        skinIndex:skinIndex
+                                                           device:device];
             [part configureMaterial:primitive.material
                            vertices:vertices
                          jointCount:skinIndex == NoIndex ? 1 : data->skins[skinIndex].joints_count];
@@ -1287,7 +1316,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     [self updatePoseAtTime:timeBSeconds];
     return;
   }
-  auto &pose = poseScratch_[0];
+  auto       &pose  = poseScratch_[0];
   const auto &poseB = poseScratch_[1];
   [self samplePoseForAnimation:animationA time:timeASeconds into:pose];
   [self samplePoseForAnimation:animationB time:timeBSeconds into:poseScratch_[1]];
@@ -1366,7 +1395,10 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   auto parent = asset_->nodes[index].parent;
   if (parent != NoIndex)
   {
-    [self computeWorldMatricesFromLocal:localMatrices index:parent world:worldMatrices visited:visited];
+    [self computeWorldMatricesFromLocal:localMatrices
+                                  index:parent
+                                  world:worldMatrices
+                                visited:visited];
     worldMatrices[index] = simd_mul(worldMatrices[parent], localMatrices[index]);
   }
   else
@@ -1376,14 +1408,16 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   visited[index] = true;
 }
 
-- (void)samplePoseForAnimation:(NSUInteger)index time:(float)seconds into:(std::vector<PoseData> &)pose
+- (void)samplePoseForAnimation:(NSUInteger)index
+                          time:(float)seconds
+                          into:(std::vector<PoseData> &)pose
 {
   // Reset every component: channels omitted by a new clip must use the bind pose.
   pose = asset_->bindPose;
   if (index < asset_->animations.size())
   {
     const auto &clip = asset_->animations[index];
-    auto        time = clip.duration > 0.0f ? std::fmod(std::max(0.0f, seconds), clip.duration) : seconds;
+    auto time = clip.duration > 0.0f ? std::fmod(std::max(0.0f, seconds), clip.duration) : seconds;
     for (const auto &channel : clip.channels)
     {
       if (channel.nodeIndex < 0 || channel.nodeIndex >= pose.size() || channel.samplerIndex < 0 ||
@@ -1411,8 +1445,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
       }
       case AnimationPath::Scale:
       {
-        auto value   = SampleChannel(sampler, time);
-        node.scale   = simd_make_float3(value.x, value.y, value.z);
+        auto value     = SampleChannel(sampler, time);
+        node.scale     = simd_make_float3(value.x, value.y, value.z);
         node.hasMatrix = false;
         break;
       }
@@ -1431,17 +1465,21 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   auto &localMatrices = localMatrices_;
   for (size_t i = 0; i < pose.size(); i++)
   {
-    localMatrices[i] = pose[i].hasMatrix ? pose[i].matrix
-                                         : MatrixFromTRS(pose[i].translation, pose[i].rotation, pose[i].scale);
+    localMatrices[i] = pose[i].hasMatrix
+                           ? pose[i].matrix
+                           : MatrixFromTRS(pose[i].translation, pose[i].rotation, pose[i].scale);
   }
 
   auto &worldMatrices = currentWorldMatrices_;
-  auto &visited = visited_;
+  auto &visited       = visited_;
   std::fill(worldMatrices.begin(), worldMatrices.end(), matrix_identity_float4x4);
   std::fill(visited.begin(), visited.end(), false);
   for (size_t i = 0; i < pose.size(); i++)
   {
-    [self computeWorldMatricesFromLocal:localMatrices index:static_cast<int>(i) world:worldMatrices visited:visited];
+    [self computeWorldMatricesFromLocal:localMatrices
+                                  index:static_cast<int>(i)
+                                  world:worldMatrices
+                                visited:visited];
   }
 
   for (ModelPart *part in parts_)

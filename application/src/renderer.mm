@@ -3,6 +3,8 @@
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
 #import "renderer.h"
+#include <AppKit/AppKit.h>
+#import <Metal/Metal.h>
 #include <alloy3d/application.h>
 #import <alloy3d/camera.h>
 #import <alloy3d/metal/draw2d.h>
@@ -11,8 +13,6 @@
 #import <alloy3d/metal/sprite.h>
 #include <alloy3d/model.h>
 #include <alloy3d/sprite.h>
-#include <AppKit/AppKit.h>
-#import <Metal/Metal.h>
 #include <cstddef>
 #include <memory>
 #import <simd/simd.h>
@@ -31,8 +31,8 @@ NSString *StringViewToNSString(std::string_view value)
   }
 
   NSString *string = [[NSString alloc] initWithBytes:value.data()
-                                             length:value.size()
-                                           encoding:NSUTF8StringEncoding];
+                                              length:value.size()
+                                            encoding:NSUTF8StringEncoding];
   if (string == nil)
   {
     return @"";
@@ -96,7 +96,10 @@ public:
   {
     return model_ != nil && [model_ getBounds:&bounds];
   }
-  std::size_t AnimationCount() const override { return model_ != nil ? [model_ animationCount] : 0; }
+  std::size_t AnimationCount() const override
+  {
+    return model_ != nil ? [model_ animationCount] : 0;
+  }
   std::string AnimationName(std::size_t index) const override
   {
     if (model_ == nil)
@@ -140,11 +143,8 @@ public:
       [model_ setAnimationTime:seconds];
     }
   }
-  void SetAnimationBlend(std::size_t animationA,
-                         float timeASeconds,
-                         std::size_t animationB,
-                         float timeBSeconds,
-                         float weight) override
+  void SetAnimationBlend(std::size_t animationA, float timeASeconds, std::size_t animationB,
+                         float timeBSeconds, float weight) override
   {
     if (model_ != nil)
     {
@@ -167,7 +167,8 @@ public:
   }
   int RigIndex(std::string_view name) const override
   {
-    return model_ != nil ? static_cast<int>([model_ rigIndexForName:StringViewToNSString(name)]) : -1;
+    return model_ != nil ? static_cast<int>([model_ rigIndexForName:StringViewToNSString(name)])
+                         : -1;
   }
   bool RigTransform(std::size_t index, simd_float4x4 &transform) const override
   {
@@ -181,10 +182,10 @@ public:
 class AppCtx : public alloy3d::ApplicationContext
 {
 public:
-  Draw2D     *draw2d_;
-  Draw3D     *draw3d_;
-  alloy3d::CameraData *camera_;
-  id<MTLDevice> device_;
+  Draw2D                      *draw2d_;
+  Draw3D                      *draw3d_;
+  alloy3d::CameraData         *camera_;
+  id<MTLDevice>                device_;
   alloy3d::metal::PostProcess *post_ = nullptr;
 
   AppCtx()           = default;
@@ -196,12 +197,12 @@ public:
   {
     [draw2d_ setTextBitmapLimit:budget.bitmapBytes / 2 textureLimit:budget.textureBytes / 2];
     [draw3d_ setTextBitmapLimit:budget.bitmapBytes - budget.bitmapBytes / 2
-                  textureLimit:budget.textureBytes - budget.textureBytes / 2];
+                   textureLimit:budget.textureBytes - budget.textureBytes / 2];
   }
 
   alloy3d::RenderMemoryStats GetRenderMemoryStats() const override
   {
-    auto stats = [draw2d_ memoryStats];
+    auto       stats = [draw2d_ memoryStats];
     const auto other = [draw3d_ memoryStats];
     stats.vertexBufferBytes += other.vertexBufferBytes;
     stats.instanceBufferBytes += other.instanceBufferBytes;
@@ -210,7 +211,11 @@ public:
     stats.textTextureCacheBytes += other.textTextureCacheBytes;
     stats.textCacheEntries += other.textCacheEntries;
     stats.releasePending |= other.releasePending;
-    if(post_) { stats.postProcessBytes=post_->bytes(); stats.releasePending |= post_->releasePending(); }
+    if (post_)
+    {
+      stats.postProcessBytes = post_->bytes();
+      stats.releasePending |= post_->releasePending();
+    }
     return stats;
   }
 
@@ -218,7 +223,8 @@ public:
   {
     [draw2d_ releaseUnusedMemory];
     [draw3d_ releaseUnusedMemory];
-    if(post_)post_->releaseUnusedMemory();
+    if (post_)
+      post_->releaseUnusedMemory();
   }
 
   void Print(std::string_view msg, float x, float y) override
@@ -282,7 +288,8 @@ public:
   {
     return [draw3d_ createModelShader:source diagnostics:diagnostics];
   }
-  alloy3d::ModelShaderPtr CreateModelMaterialShader(std::string_view source, std::string &diagnostics) override
+  alloy3d::ModelShaderPtr CreateModelMaterialShader(std::string_view source,
+                                                    std::string     &diagnostics) override
   {
     return [draw3d_ createModelMaterialShader:source diagnostics:diagnostics];
   }
@@ -334,22 +341,29 @@ public:
 
   bool SetPostProcessing3D(const alloy3d::PostProcessing3D &settings) override
   {
-    if(!post_)return false;
-    post_->set(settings);return true;
+    if (!post_)
+      return false;
+    post_->set(settings);
+    return true;
   }
   bool SetModelScreenSpace3D(const alloy3d::ModelScreenSpace3D &settings) override
   {
-    if(!post_ || !post_->sceneEffects())return false;
-    [draw3d_ setModelScreenSpace:settings];return true;
+    if (!post_ || !post_->sceneEffects())
+      return false;
+    [draw3d_ setModelScreenSpace:settings];
+    return true;
   }
   bool SetModelSoftParticles3D(float distance) override
   {
-    if(!post_ || !post_->sceneEffects())return false;
-    [draw3d_ setModelSoftParticles:distance];return true;
+    if (!post_ || !post_->sceneEffects())
+      return false;
+    [draw3d_ setModelSoftParticles:distance];
+    return true;
   }
   bool SetModelVisibility3D(const alloy3d::ModelVisibility3D &visibility) override
   {
-    [draw3d_ setModelVisibility:visibility];return true;
+    [draw3d_ setModelVisibility:visibility];
+    return true;
   }
   bool SetModelWind3D(const alloy3d::ModelWind3D &wind) override
   {
@@ -420,8 +434,7 @@ public:
   {
     [draw3d_ drawBox:center size:size color:color];
   }
-  void DrawBox3D(simd_float3 center, simd_float3 size, float rotationY,
-                 simd_float4 color) override
+  void DrawBox3D(simd_float3 center, simd_float3 size, float rotationY, simd_float4 color) override
   {
     [draw3d_ drawBox:center size:size rotationY:rotationY color:color];
   }
@@ -438,7 +451,11 @@ public:
   void DrawCylinder3D(simd_float3 center, float radius, float height, simd_float3 rotation,
                       simd_float4 color, int segments) override
   {
-    [draw3d_ drawCylinder:center radius:radius height:height rotation:rotation color:color
+    [draw3d_ drawCylinder:center
+                   radius:radius
+                   height:height
+                 rotation:rotation
+                    color:color
                  segments:segments];
   }
   void DrawCone3D(simd_float3 center, float radius, float height, simd_float4 color,
@@ -449,13 +466,21 @@ public:
   void DrawCone3D(simd_float3 center, float radius, float height, simd_float3 rotation,
                   simd_float4 color, int segments) override
   {
-    [draw3d_ drawCone:center radius:radius height:height rotation:rotation color:color
+    [draw3d_ drawCone:center
+               radius:radius
+               height:height
+             rotation:rotation
+                color:color
              segments:segments];
   }
   void DrawCone3D(simd_float3 center, simd_float3 direction, float radius, float height,
                   simd_float4 color, int segments) override
   {
-    [draw3d_ drawCone:center direction:direction radius:radius height:height color:color
+    [draw3d_ drawCone:center
+            direction:direction
+               radius:radius
+               height:height
+                color:color
              segments:segments];
   }
   void DrawText3D(std::string_view msg, simd_float3 position, float lineHeight, simd_float4 color,
@@ -510,10 +535,7 @@ public:
       [draw3d_ drawModelInstances:impl->GetModel() instances:instances];
   }
 
-  void DrawModel3D(ModelPtr model,
-                   simd_float3 position,
-                   simd_float3 rotation,
-                   simd_float3 scale,
+  void DrawModel3D(ModelPtr model, simd_float3 position, simd_float3 rotation, simd_float3 scale,
                    simd_float4 color) override
   {
     if (auto modeli = std::dynamic_pointer_cast<ModelImpl>(model))
@@ -563,12 +585,12 @@ public:
 
   alloy3d::ApplicationLoop *appLoop_;
 
-  alloy3d::CameraData camera_;
-  Draw2D    *draw2d_;
-  Draw3D    *draw3d_;
-  bool       applicationStarted_;
+  alloy3d::CameraData                          camera_;
+  Draw2D                                      *draw2d_;
+  Draw3D                                      *draw3d_;
+  bool                                         applicationStarted_;
   std::unique_ptr<alloy3d::metal::PostProcess> post_;
-  NSUInteger postPage_;
+  NSUInteger                                   postPage_;
 }
 
 + (id<MTLLibrary>)createShaderLibrary:(id<MTLDevice>)device fromName:(NSString *)libraryName
@@ -596,7 +618,8 @@ public:
   return [self initWithMetalKitView:view renderOptions:alloy3d::RenderOptions{}];
 }
 
-- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view renderOptions:(alloy3d::RenderOptions)options
+- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view
+                               renderOptions:(alloy3d::RenderOptions)options
 {
   self = [super init];
   if (self != nil)
@@ -613,9 +636,17 @@ public:
     // initialize
     shaderLibrary_ = [Renderer createShaderLibrary:device_ fromName:@"shaders/shaders"];
     draw2d_        = [[Draw2D alloc] initWithMetalKitView:view shaderlib:shaderLibrary_];
-    draw3d_ = [[Draw3D alloc] initWithMetalKitView:view shaderlib:shaderLibrary_
-        colorFormat:options.hdr ? MTLPixelFormatRGBA16Float : view.colorPixelFormat];
-    if(options.hdr)post_=std::make_unique<alloy3d::metal::PostProcess>(device_,shaderLibrary_,view.colorPixelFormat,view.depthStencilPixelFormat,view.sampleCount,options.sceneEffects);
+    draw3d_        = [[Draw3D alloc]
+        initWithMetalKitView:view
+                   shaderlib:shaderLibrary_
+                 colorFormat:options.hdr ? MTLPixelFormatRGBA16Float : view.colorPixelFormat];
+    if (options.hdr)
+      post_ = std::make_unique<alloy3d::metal::PostProcess>(device_,
+                                                            shaderLibrary_,
+                                                            view.colorPixelFormat,
+                                                            view.depthStencilPixelFormat,
+                                                            view.sampleCount,
+                                                            options.sceneEffects);
 
     //
 
@@ -658,7 +689,7 @@ public:
     dispatch_semaphore_signal(renderSemaphore_);
     return;
   }
-  commandBuffer.label                = @"MyCommand";
+  commandBuffer.label = @"MyCommand";
 
   __block dispatch_semaphore_t block_sema = renderSemaphore_;
   [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> buffer) {
@@ -670,20 +701,20 @@ public:
   appctx.draw3d_ = draw3d_;
   appctx.camera_ = &camera_;
   appctx.device_ = device_;
-  appctx.post_ = post_.get();
+  appctx.post_   = post_.get();
   [draw2d_ beginFrame];
   [draw3d_ beginFrame];
   appLoop_->Update(appctx);
 
   // render
   auto renderPassDescriptor = view.currentRenderPassDescriptor;
-  auto drawable = view.currentDrawable;
+  auto drawable             = view.currentDrawable;
 
   if (renderPassDescriptor != nil && drawable != nil)
   {
     [draw3d_ encodeShadowMap:commandBuffer camera:&camera_];
-    auto scenePass=post_ ? post_->begin(renderPassDescriptor,postPage_) : renderPassDescriptor;
-    auto renderEncoder  = [commandBuffer renderCommandEncoderWithDescriptor:scenePass];
+    auto scenePass = post_ ? post_->begin(renderPassDescriptor, postPage_) : renderPassDescriptor;
+    auto renderEncoder = [commandBuffer renderCommandEncoderWithDescriptor:scenePass];
     if (renderEncoder == nil)
     {
       [draw2d_ discardFrame];
@@ -698,25 +729,37 @@ public:
     [renderEncoder setDepthStencilState:depthState_];
 
     // 3D Graphics
-    const bool split=post_ && post_->sceneEffects();
-    if(split)[draw3d_ configurePostProcess:post_.get() camera:camera_];
-    [draw3d_ render:renderEncoder camera:&camera_ phase:split ? ScenePhase::Opaque : ScenePhase::All];
-    if(split)
+    const bool split = post_ && post_->sceneEffects();
+    if (split)
+      [draw3d_ configurePostProcess:post_.get() camera:camera_];
+    [draw3d_ render:renderEncoder
+             camera:&camera_
+              phase:split ? ScenePhase::Opaque : ScenePhase::All];
+    if (split)
     {
-      [renderEncoder endEncoding];post_->captureScene(commandBuffer,postPage_,camera_);
+      [renderEncoder endEncoding];
+      post_->captureScene(commandBuffer, postPage_, camera_);
       [draw3d_ setSceneColor:post_->sceneColor(postPage_) depth:post_->sceneDepth(postPage_)];
-      renderEncoder=[commandBuffer renderCommandEncoderWithDescriptor:post_->transparentPass(renderPassDescriptor,postPage_)];
+      renderEncoder = [commandBuffer
+          renderCommandEncoderWithDescriptor:post_->transparentPass(renderPassDescriptor,
+                                                                    postPage_)];
       [draw3d_ render:renderEncoder camera:&camera_ phase:ScenePhase::Transparent];
     }
 
-    if(post_)
+    if (post_)
     {
       [renderEncoder endEncoding];
-      post_->prepare(commandBuffer,postPage_);
-      renderEncoder=[commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
-      if(!renderEncoder){[draw2d_ discardFrame];[commandBuffer commit];postPage_=(postPage_+1)%3;return;}
-      post_->encode(renderEncoder,postPage_);
-      postPage_=(postPage_+1)%3;
+      post_->prepare(commandBuffer, postPage_);
+      renderEncoder = [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
+      if (!renderEncoder)
+      {
+        [draw2d_ discardFrame];
+        [commandBuffer commit];
+        postPage_ = (postPage_ + 1) % 3;
+        return;
+      }
+      post_->encode(renderEncoder, postPage_);
+      postPage_ = (postPage_ + 1) % 3;
     }
     // 2D Graphics
     [renderEncoder setCullMode:MTLCullModeNone];
@@ -764,7 +807,7 @@ public:
   appctx.draw3d_ = draw3d_;
   appctx.camera_ = &camera_;
   appctx.device_ = device_;
-  appctx.post_ = post_.get();
+  appctx.post_   = post_.get();
   appLoop_->Start(appctx);
 }
 

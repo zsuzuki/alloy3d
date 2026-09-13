@@ -7,9 +7,9 @@
 #import <alloy3d/metal/model.h>
 #include <alloy3d/model_instance.h>
 #include <alloy3d/model_screen_space.h>
-#include <alloy3d/model_wind.h>
 #include <alloy3d/model_shader.h>
 #include <alloy3d/model_texture.h>
+#include <alloy3d/model_wind.h>
 #include <alloy3d/render_memory.h>
 #include <simd/vector_types.h>
 #include <span>
@@ -22,16 +22,28 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
   DrawText3DAlignRightBottom,
 };
 
-namespace alloy3d::metal { class PostProcess; }
-enum class ScenePhase { All, Opaque, Transparent };
+namespace alloy3d::metal
+{
+class PostProcess;
+}
+enum class ScenePhase
+{
+  All,
+  Opaque,
+  Transparent
+};
 
 @interface Draw3D : NSObject
-- (alloy3d::ModelShaderPtr)createModelMaterialShader:(std::string_view)source diagnostics:(std::string &)diagnostics;
-- (void)configurePostProcess:(alloy3d::metal::PostProcess * _Nonnull)post camera:(const alloy3d::CameraData &)camera;
+- (alloy3d::ModelShaderPtr)createModelMaterialShader:(std::string_view)source
+                                         diagnostics:(std::string &)diagnostics;
+- (void)configurePostProcess:(alloy3d::metal::PostProcess *_Nonnull)post
+                      camera:(const alloy3d::CameraData &)camera;
 - (void)setModelScreenSpace:(const alloy3d::ModelScreenSpace3D &)settings;
 - (void)setModelSoftParticles:(float)distance;
 - (void)setSceneColor:(nullable id<MTLTexture>)color depth:(nullable id<MTLTexture>)depth;
-- (void)render:(nullable id<MTLRenderCommandEncoder>)encoder camera:(nonnull alloy3d::CameraData *)camera phase:(ScenePhase)phase;
+- (void)render:(nullable id<MTLRenderCommandEncoder>)encoder
+        camera:(nonnull alloy3d::CameraData *)camera
+         phase:(ScenePhase)phase;
 - (void)setModelVisibility:(const alloy3d::ModelVisibility3D &)visibility;
 - (void)setModelWind:(const alloy3d::ModelWind3D &)wind;
 - (void)setModelCoverage:(simd_float2)interval;
@@ -43,7 +55,9 @@ enum class ScenePhase { All, Opaque, Transparent };
 - (void)setModelNormalMapping:(const alloy3d::ModelNormalMapping3D &)mapping;
 - (void)setModelTextureSampling:(const alloy3d::ModelTextureSampling3D &)sampling;
 
-- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view shaderlib:(nonnull id<MTLLibrary>)library colorFormat:(MTLPixelFormat)format;
+- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view
+                                   shaderlib:(nonnull id<MTLLibrary>)library
+                                 colorFormat:(MTLPixelFormat)format;
 - (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view
                                    shaderlib:(nonnull id<MTLLibrary>)library;
 - (void)render:(nullable id<MTLRenderCommandEncoder>)renderEncoder

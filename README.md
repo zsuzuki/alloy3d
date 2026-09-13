@@ -26,6 +26,7 @@ Alloy3D was split out from the earlier `metaltest` rendering test repository.
 - [距離フォグと空・地面の環境光](docs/environment-ja.md)
 - [モデルの簡易ハイライト](docs/highlights-ja.md)
 - [モデルのカスタムシェーダー](docs/custom-shaders-ja.md)
+- [森林向け描画機能の導入記録](docs/forest-rendering-upgrades-ja.md)
 - [雨上がりの森林サンプル](docs/forest-sample-ja.md)
 
 ## Status

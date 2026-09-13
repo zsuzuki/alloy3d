@@ -1,13 +1,13 @@
 #pragma once
-#include <alloy3d/model_screen_space.h>
 #include <algorithm>
 #include <alloy3d/camera.h>
 #include <alloy3d/lighting.h>
 #include <alloy3d/lod.h>
-#include <alloy3d/post_processing.h>
 #include <alloy3d/model_instance.h>
-#include <alloy3d/model_wind.h>
+#include <alloy3d/model_screen_space.h>
 #include <alloy3d/model_texture.h>
+#include <alloy3d/model_wind.h>
+#include <alloy3d/post_processing.h>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -170,7 +170,8 @@ struct Settings
 {
   bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
        flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true,
-       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true, shadowLod = true, softParticles = true, screenWater = true, volumetric = true;
+       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true,
+       shadowLod = true, softParticles = true, screenWater = true, volumetric = true;
 };
 
 class Scene
@@ -183,7 +184,7 @@ class Scene
   size_t                                                         treeCount_ = 0;
   uint32_t                                                       seed_      = 0x197307;
   std::array<std::vector<alloy3d::ModelInstance>, Assets.size()> base_, live_;
-  std::vector<alloy3d::ModelInstance> lodWood_, lodLeaves_;
+  std::vector<alloy3d::ModelInstance>                            lodWood_, lodLeaves_;
   float                                                          Random(float low, float high)
   {
     seed_ = seed_ * 1664525u + 1013904223u;
@@ -405,7 +406,7 @@ public:
     for (size_t asset = BillboardBegin; asset < ThicketBegin; ++asset)
       live_[asset].clear();
     // Screen-size LOD with complementary coverage. Both representations stay opaque.
-    simd_float2 eye = {cameraEye.x, cameraEye.z};
+    simd_float2         eye = {cameraEye.x, cameraEye.z};
     alloy3d::CameraData lodCamera;
     Camera(lodCamera, 1);
     for (size_t variant = 0; variant < Crowns.size(); ++variant)
@@ -419,14 +420,17 @@ public:
       live_[DistantFoliage[variant]].clear();
       for (size_t i = 0; i < wood.size(); ++i)
       {
-        const std::array<float,2> thresholds = {.54f,.34f};
-        auto transition = alloy3d::SelectLod3D(
-            alloy3d::ProjectedHeight3D(lodCamera, wood[i].position + simd_make_float3(0,5*wood[i].scale.y,0),
-                                       6*wood[i].scale.y),
-            std::span(thresholds.data(), settings.billboards ? 2 : 1));
+        const std::array<float, 2> thresholds = {.54f, .34f};
+        auto                       transition =
+            alloy3d::SelectLod3D(alloy3d::ProjectedHeight3D(
+                                     lodCamera,
+                                     wood[i].position + simd_make_float3(0, 5 * wood[i].scale.y, 0),
+                                     6 * wood[i].scale.y),
+                                 std::span(thresholds.data(), settings.billboards ? 2 : 1));
         auto placeLevel = [&](size_t level, simd_float2 coverage)
         {
-          if (coverage.y <= coverage.x) return;
+          if (coverage.y <= coverage.x)
+            return;
           auto w = wood[i], l = leaves[i];
           w.coverage = l.coverage = coverage;
           if (level < 2)
@@ -436,18 +440,19 @@ public:
           }
           else
           {
-            float facing = std::atan2(eye.x-w.position.x, eye.y-w.position.z);
-            int view = int(std::floor((facing-w.rotation.y)*8.f/6.28318530718f+.5f));
-            view = (view%8+8)%8;
+            float facing = std::atan2(eye.x - w.position.x, eye.y - w.position.z);
+            int   view   = int(std::floor((facing - w.rotation.y) * 8.f / 6.28318530718f + .5f));
+            view         = (view % 8 + 8) % 8;
             w.rotation.y = facing;
-            live_[BillboardAsset(variant,view)].push_back(w);
+            live_[BillboardAsset(variant, view)].push_back(w);
           }
         };
-        if (transition.nearLevel == transition.farLevel) placeLevel(transition.nearLevel,simd_float2{0,1});
+        if (transition.nearLevel == transition.farLevel)
+          placeLevel(transition.nearLevel, simd_float2{0, 1});
         else
         {
-          placeLevel(transition.nearLevel,simd_float2{0,1-transition.farWeight});
-          placeLevel(transition.farLevel,simd_float2{1-transition.farWeight,1});
+          placeLevel(transition.nearLevel, simd_float2{0, 1 - transition.farWeight});
+          placeLevel(transition.farLevel, simd_float2{1 - transition.farWeight, 1});
         }
       }
     }
@@ -516,7 +521,7 @@ public:
   {
     return {{-.65f, -1, .38f}, {1, .94f, .80f}, .25f, 1.f};
   }
-  alloy3d::Fog3D             Fog() const { return {settings.fog, MistColor, 18, 96}; }
+  alloy3d::Fog3D       Fog() const { return {settings.fog, MistColor, 18, 96}; }
   alloy3d::HeightFog3D HeightFog() const
   {
     return {settings.fog && settings.heightFog, MistColor, .012f, .5f, .65f, .25f};
@@ -528,32 +533,39 @@ public:
   alloy3d::DirectionalShadow3D Shadow() const
   {
     alloy3d::DirectionalShadow3D shadow;
-    shadow.enabled    = settings.shadows;
-    shadow.resolution = 2048;
-    shadow.bounds     = {{-32, -2, -64}, {32, 24, 24}};
-    shadow.depthBias  = .0005f;
+    shadow.enabled      = settings.shadows;
+    shadow.resolution   = 2048;
+    shadow.bounds       = {{-32, -2, -64}, {32, 24, 24}};
+    shadow.depthBias    = .0005f;
     shadow.filterRadius = settings.softShadows ? 1.25f : 0;
-    shadow.stabilize = true;
+    shadow.stabilize    = true;
     return shadow;
   }
   alloy3d::PostProcessing3D PostProcessing() const
   {
-    return {1,settings.toneMapping ? alloy3d::ToneMapping3D::ACES : alloy3d::ToneMapping3D::None,{settings.bloom ? .08f : 0.f, .8f, 4},
-      {settings.volumetric && settings.shafts ? .25f : 0.f,.028f,0,.22f,45,.35f,32}};
+    return {1,
+            settings.toneMapping ? alloy3d::ToneMapping3D::ACES : alloy3d::ToneMapping3D::None,
+            {settings.bloom ? .08f : 0.f, .8f, 4},
+            {settings.volumetric && settings.shafts ? .25f : 0.f, .028f, 0, .22f, 45, .35f, 32}};
   }
   alloy3d::ModelWind3D Wind(size_t asset) const
   {
     alloy3d::ModelWind3D wind;
     wind.time = time;
-    if (!settings.wind) return wind;
+    if (!settings.wind)
+      return wind;
     if (asset == Grass || asset == Fern)
     {
-      wind.strength = asset == Grass ? .10f : .08f;
+      wind.strength  = asset == Grass ? .10f : .08f;
       wind.tipHeight = asset == Grass ? 1.f : 1.5f;
     }
-    for (size_t v=0;v<3;++v)
-      if (asset == Crowns[v] || asset == Foliage[v] || asset == DistantCrowns[v] || asset == DistantFoliage[v] || IsBillboard(asset))
-      { wind.strength = .22f; wind.tipHeight = 12; }
+    for (size_t v = 0; v < 3; ++v)
+      if (asset == Crowns[v] || asset == Foliage[v] || asset == DistantCrowns[v] ||
+          asset == DistantFoliage[v] || IsBillboard(asset))
+      {
+        wind.strength  = .22f;
+        wind.tipHeight = 12;
+      }
     return wind;
   }
   alloy3d::ModelTextureTransform3D TextureTransform(size_t asset) const
@@ -564,33 +576,40 @@ public:
   }
   alloy3d::ModelScreenSpace3D ScreenSpace(size_t asset) const
   {
-    return asset==Water && settings.screenWater ? alloy3d::ModelScreenSpace3D{.65f,10,1,24,.75f} : alloy3d::ModelScreenSpace3D{};
+    return asset == Water && settings.screenWater
+               ? alloy3d::ModelScreenSpace3D{.65f, 10, 1, 24, .75f}
+               : alloy3d::ModelScreenSpace3D{};
   }
   float SoftParticles(size_t asset) const
   {
-    if(!settings.softParticles)return 0;
-    return asset==Droplet ? .045f : 0.f;
+    if (!settings.softParticles)
+      return 0;
+    return asset == Droplet ? .045f : 0.f;
   }
   bool CastShadow(size_t asset) const
   {
-    if(settings.shadowLod)
-      for(size_t v=0;v<3;++v)if(asset==Crowns[v] || asset==Foliage[v])return false;
+    if (settings.shadowLod)
+      for (size_t v = 0; v < 3; ++v)
+        if (asset == Crowns[v] || asset == Foliage[v])
+          return false;
     return true;
   }
   template <class Submit> void DrawShadowProxies(Submit submit) const
   {
-    if(!settings.shadows || !settings.shadowLod)return;
-    for(size_t v=0;v<3;++v)
+    if (!settings.shadows || !settings.shadowLod)
+      return;
+    for (size_t v = 0; v < 3; ++v)
     {
-      submit(DistantCrowns[v],std::span<const alloy3d::ModelInstance>(live_[Crowns[v]]));
-      submit(DistantFoliage[v],std::span<const alloy3d::ModelInstance>(live_[Foliage[v]]));
+      submit(DistantCrowns[v], std::span<const alloy3d::ModelInstance>(live_[Crowns[v]]));
+      submit(DistantFoliage[v], std::span<const alloy3d::ModelInstance>(live_[Foliage[v]]));
     }
   }
   template <class Submit> void Draw(Submit submit) const
   {
     for (size_t asset = 0; asset < Assets.size(); ++asset)
     {
-      if (asset==Beam && settings.volumetric)continue;
+      if (asset == Beam && settings.volumetric)
+        continue;
       if ((asset == Beam || asset == Mote) && !settings.shafts)
         continue;
       if (asset == Droplet && !settings.droplets)

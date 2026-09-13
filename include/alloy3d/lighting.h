@@ -7,8 +7,8 @@ namespace alloy3d
 struct ModelTransmission3D
 {
   // Thin-surface backlighting; does not change alpha or refract the background.
-  float strength = 0; // Finite [0,1], zero disables.
-  simd_float3 color = {1, 1, 1}; // Finite linear RGB [0,1].
+  float       strength = 0;         // Finite [0,1], zero disables.
+  simd_float3 color    = {1, 1, 1}; // Finite linear RGB [0,1].
 };
 
 struct ModelMaterialDetail3D
@@ -29,8 +29,8 @@ struct Fog3D
   bool enabled = false;
   // Linear RGB. Distance is camera-forward depth in world units, not radial distance.
   simd_float3 color = {.5f, .6f, .7f};
-  float start = 10;
-  float end   = 100;
+  float       start = 10;
+  float       end   = 100;
 };
 
 struct HemisphereLight3D
@@ -40,17 +40,17 @@ struct HemisphereLight3D
   simd_float3 skyColor    = {.65f, .8f, 1};
   simd_float3 groundColor = {.3f, .25f, .2f};
   simd_float3 up          = {0, 1, 0}; // Finite, nonzero world-space direction.
-  float intensity = .35f;
+  float       intensity   = .35f;
 };
 
 struct HeightFog3D
 {
-  bool enabled = false;
-  simd_float3 color = {.5f, .6f, .7f}; // Linear RGB [0,1].
-  float density = .02f; // Extinction per world unit at baseHeight, [0,1].
-  float baseHeight = 0;
-  float falloff = .5f; // Exponential density falloff per upward world unit, [0,100].
-  float maxOpacity = .8f; // [0,1].
+  bool        enabled    = false;
+  simd_float3 color      = {.5f, .6f, .7f}; // Linear RGB [0,1].
+  float       density    = .02f;            // Extinction per world unit at baseHeight, [0,1].
+  float       baseHeight = 0;
+  float       falloff    = .5f; // Exponential density falloff per upward world unit, [0,100].
+  float       maxOpacity = .8f; // [0,1].
 };
 
 struct DirectionalLight3D
@@ -72,8 +72,8 @@ struct DirectionalShadow3D
   // Bias in normalized light depth. Valid range [0, 0.1].
   float depthBias = .001f;
   // Caster slope bias, [0,8]; 0 disables. Internal normalized depth clamp is 0.01.
-  float slopeScale = 2.0f;
-  float filterRadius = 0; // 0: hardware PCF; (0,4]: 3x3 PCF radius in texels.
-  bool stabilize = false; // Snap light-space center to the shadow texel grid.
+  float slopeScale   = 2.0f;
+  float filterRadius = 0;     // 0: hardware PCF; (0,4]: 3x3 PCF radius in texels.
+  bool  stabilize    = false; // Snap light-space center to the shadow texel grid.
 };
 } // namespace alloy3d

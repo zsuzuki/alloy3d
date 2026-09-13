@@ -19,8 +19,8 @@ class ForestLoop final : public alloy3d::ApplicationLoop
 
 public:
   const char *GetApplicationName() const override { return "Alloy3D · Forest after rain"; }
-  alloy3d::RenderOptions GetRenderOptions() const override { return {4,true,true}; }
-  bool        InitialWindowSize(double &width, double &height, bool &border) override
+  alloy3d::RenderOptions GetRenderOptions() const override { return {4, true, true}; }
+  bool                   InitialWindowSize(double &width, double &height, bool &border) override
   {
     width  = width_;
     height = height_;
@@ -42,7 +42,7 @@ public:
   void Start(alloy3d::ApplicationContext &ctx) override
   {
     ctx.SetPostProcessing3D(scene_.PostProcessing());
-    ctx.SetModelTextureSampling3D({8,true});
+    ctx.SetModelTextureSampling3D({8, true});
     ctx.SetTransparentBatching3D(true);
     ctx.SetFrustumCulling3D(true);
     for (size_t i = 0; i < models_.size(); ++i)
@@ -89,17 +89,41 @@ public:
           auto &s = scene_.settings;
           switch (key)
           {
-          case Key::N: s.normalMaps = !s.normalMaps; break;
-          case Key::M: s.materialDetail = !s.materialDetail; break;
-          case Key::T: s.transmission = !s.transmission; break;
-          case Key::Y: s.volumetric = !s.volumetric; break;
-          case Key::E: s.screenWater = !s.screenWater; break;
-          case Key::C: s.softParticles = !s.softParticles; break;
-          case Key::U: s.shadowLod = !s.shadowLod; break;
-          case Key::L: s.bloom = !s.bloom; break;
-          case Key::O: s.toneMapping = !s.toneMapping; break;
-          case Key::K: s.softShadows = !s.softShadows; environmentDirty_ = true; break;
-          case Key::J: s.heightFog = !s.heightFog; environmentDirty_ = true; break;
+          case Key::N:
+            s.normalMaps = !s.normalMaps;
+            break;
+          case Key::M:
+            s.materialDetail = !s.materialDetail;
+            break;
+          case Key::T:
+            s.transmission = !s.transmission;
+            break;
+          case Key::Y:
+            s.volumetric = !s.volumetric;
+            break;
+          case Key::E:
+            s.screenWater = !s.screenWater;
+            break;
+          case Key::C:
+            s.softParticles = !s.softParticles;
+            break;
+          case Key::U:
+            s.shadowLod = !s.shadowLod;
+            break;
+          case Key::L:
+            s.bloom = !s.bloom;
+            break;
+          case Key::O:
+            s.toneMapping = !s.toneMapping;
+            break;
+          case Key::K:
+            s.softShadows     = !s.softShadows;
+            environmentDirty_ = true;
+            break;
+          case Key::J:
+            s.heightFog       = !s.heightFog;
+            environmentDirty_ = true;
+            break;
           case Key::G:
             s.fog             = !s.fog;
             environmentDirty_ = true;
@@ -164,14 +188,16 @@ public:
     scene_.Draw(
         [&](size_t asset, std::span<const alloy3d::ModelInstance> instances)
         {
-          ctx.SetModelVisibility3D({true,scene_.CastShadow(asset)});
+          ctx.SetModelVisibility3D({true, scene_.CastShadow(asset)});
           ctx.SetModelSoftParticles3D(scene_.SoftParticles(asset));
           ctx.SetModelScreenSpace3D(scene_.ScreenSpace(asset));
           ctx.SetModelWind3D(scene_.Wind(asset));
           ctx.SetModelTextureTransform3D(scene_.TextureTransform(asset));
-          ctx.SetModelTransmission3D({scene_.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
-                                      {.75f, 1.f, .4f}});
-          ctx.SetModelMaterialDetail3D({scene_.settings.materialDetail && (asset == forest::Ground || asset == forest::Rock)});
+          ctx.SetModelTransmission3D(
+              {scene_.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
+               {.75f, 1.f, .4f}});
+          ctx.SetModelMaterialDetail3D({scene_.settings.materialDetail &&
+                                        (asset == forest::Ground || asset == forest::Rock)});
           ctx.SetModelShader(asset == forest::Water     ? waterShader_
                              : asset == forest::Ground  ? groundShader_
                              : forest::IsFoliage(asset) ? leafShader_
@@ -181,7 +207,7 @@ public:
                               0,
                               0});
           ctx.SetModelHighlight3D({asset == forest::Water    ? .9f
-                                     : asset == forest::Rock     ? .20f
+                                   : asset == forest::Rock   ? .20f
                                    : asset == forest::Ground ? .10f
                                                              : .035f,
                                    48});
@@ -189,11 +215,15 @@ public:
         });
     ctx.SetModelScreenSpace3D({});
     ctx.SetModelSoftParticles3D(0);
-    ctx.SetModelVisibility3D({false,true});
-    ctx.SetModelShader(nullptr);ctx.SetModelTextureTransform3D({});
-    scene_.DrawShadowProxies([&](size_t asset, auto instances){
-      ctx.SetModelWind3D(scene_.Wind(asset));ctx.DrawModelInstances3D(models_[asset],instances);
-    });
+    ctx.SetModelVisibility3D({false, true});
+    ctx.SetModelShader(nullptr);
+    ctx.SetModelTextureTransform3D({});
+    scene_.DrawShadowProxies(
+        [&](size_t asset, auto instances)
+        {
+          ctx.SetModelWind3D(scene_.Wind(asset));
+          ctx.DrawModelInstances3D(models_[asset], instances);
+        });
     ctx.SetModelVisibility3D({});
     ctx.SetModelWind3D({});
     ctx.SetModelTextureTransform3D({});
@@ -208,17 +238,28 @@ public:
       ctx.SetTextColor(.60f, .73f, .64f, 1);
       ctx.Print("A quiet forest  /  Alloy3D", 29, 62);
       ctx.SetTextColor(.78f, .86f, .77f, 1);
-      ctx.Print("Arrows  look    W / S  move    R  reset    Space  pause    Tab  hide",
-                28,
-                height_ / scale - 62);
-      const auto &s = scene_.settings;
-      ctx.Print(std::string("V  wind ") + (s.wind ? "on" : "off") + "    G  mist " +
-                    (s.fog ? "on" : "off") + "    B  sunlight " + (s.shafts ? "on" : "off") +
-                    "    H  shadows " + (s.shadows ? "on" : "off") + "    F  stream " +
-                    (s.flow ? "on" : "off") + "    I  billboards " + (s.billboards ? "on" : "off") +
-                    "    P  drops " + (s.droplets ? "on" : "off") + (s.paused ? "    PAUSED" : ""),
-                28,
-                height_ / scale - 38);
+      ctx.FillRoundRect({16, height_ / scale - 198},
+                        {std::min(width_ / scale - 16, 700.f), height_ / scale - 12},
+                        8,
+                        {.015f, .035f, .025f, .75f});
+      const auto                &s     = scene_.settings;
+      auto                       state = [](bool on) { return on ? "on" : "off"; };
+      std::array<std::string, 7> help{
+          "Arrows look / W S move / R reset / Space pause / Tab hide",
+          std::string("V wind ") + state(s.wind) + " / G mist " + state(s.fog) +
+              " / J height fog " + state(s.heightFog),
+          std::string("B sunlight ") + state(s.shafts) + " / Y volume " + state(s.volumetric) +
+              " / T leaf light " + state(s.transmission),
+          std::string("H shadows ") + state(s.shadows) + " / K soft shadows " +
+              state(s.softShadows) + " / U shadow LOD " + state(s.shadowLod),
+          std::string("F stream ") + state(s.flow) + " / P drops " + state(s.droplets) +
+              " / C soft drops " + state(s.softParticles),
+          std::string("E reflection/refraction ") + state(s.screenWater) + " / N normals " +
+              state(s.normalMaps) + " / M surface " + state(s.materialDetail),
+          std::string("I billboards ") + state(s.billboards) + " / O ACES " + state(s.toneMapping) +
+              " / L bloom " + state(s.bloom) + (s.paused ? " / PAUSED" : "")};
+      for (size_t i = 0; i < help.size(); ++i)
+        ctx.Print(help[i], 28, height_ / scale - 38 - 24 * (help.size() - 1 - i));
     }
   }
 };

@@ -3,8 +3,8 @@
 #include <alloy3d/camera.h>
 #import <alloy3d/metal/draw3d.h>
 #include <alloy3d/metal/normal_matrix.h>
-#include <array>
 #include <alloy3d/metal/post_process.h>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -24,23 +24,24 @@ static void Check(bool condition, const char *message)
 
 struct Harness
 {
-  id<MTLDevice>            device;
-  id<MTLLibrary>           library;
-  MTKView                 *view;
-  Draw3D                  *draw;
-  id<MTLCommandQueue>      queue;
-  id<MTLTexture>           colors[3];
-  id<MTLTexture>           depth;
-  id<MTLTexture>           multisampleColor = nil;
-  id<MTLDepthStencilState> depthState;
-  id<MTLCommandBuffer>     commands[3] = {nil, nil, nil};
-  double                   submitMs = 0, encodeMs = 0, gpuMs = 0;
-  NSUInteger               size;
+  id<MTLDevice>                                device;
+  id<MTLLibrary>                               library;
+  MTKView                                     *view;
+  Draw3D                                      *draw;
+  id<MTLCommandQueue>                          queue;
+  id<MTLTexture>                               colors[3];
+  id<MTLTexture>                               depth;
+  id<MTLTexture>                               multisampleColor = nil;
+  id<MTLDepthStencilState>                     depthState;
+  id<MTLCommandBuffer>                         commands[3] = {nil, nil, nil};
+  double                                       submitMs = 0, encodeMs = 0, gpuMs = 0;
+  NSUInteger                                   size;
   std::unique_ptr<alloy3d::metal::PostProcess> post;
-  MTLClearColor            clearColor = MTLClearColorMake(0, 0, 0, 0);
+  MTLClearColor                                clearColor = MTLClearColorMake(0, 0, 0, 0);
 
-  Harness(id<MTLDevice> d, const char *shader, NSUInteger dimension = 256,
-          NSUInteger samples = 1, bool hdr = false, bool sceneEffects = false) : device(d), size(dimension)
+  Harness(id<MTLDevice> d, const char *shader, NSUInteger dimension = 256, NSUInteger samples = 1,
+          bool hdr = false, bool sceneEffects = false)
+      : device(d), size(dimension)
   {
     NSError *error = nil;
     library = [d newLibraryWithURL:[NSURL fileURLWithPath:[NSString stringWithUTF8String:shader]]
@@ -50,10 +51,15 @@ struct Harness
     view.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
     view.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
     Check([d supportsTextureSampleCount:samples], "unsupported harness sample count");
-    view.sampleCount             = samples;
-    draw = [[Draw3D alloc] initWithMetalKitView:view shaderlib:library colorFormat:hdr ? MTLPixelFormatRGBA16Float : view.colorPixelFormat];
-    if(hdr)post=std::make_unique<alloy3d::metal::PostProcess>(d,library,view.colorPixelFormat,view.depthStencilPixelFormat,samples,sceneEffects);
-    queue                        = [d newCommandQueue];
+    view.sampleCount = samples;
+    draw             = [[Draw3D alloc]
+        initWithMetalKitView:view
+                   shaderlib:library
+                 colorFormat:hdr ? MTLPixelFormatRGBA16Float : view.colorPixelFormat];
+    if (hdr)
+      post = std::make_unique<alloy3d::metal::PostProcess>(
+          d, library, view.colorPixelFormat, view.depthStencilPixelFormat, samples, sceneEffects);
+    queue      = [d newCommandQueue];
     auto desc  = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:view.colorPixelFormat
                                                                     width:size
                                                                    height:size
@@ -127,36 +133,39 @@ struct Harness
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
     if (multisampleColor)
     {
-      pass.colorAttachments[0].texture = multisampleColor;
+      pass.colorAttachments[0].texture        = multisampleColor;
       pass.colorAttachments[0].resolveTexture = colors[slot];
-      pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+      pass.colorAttachments[0].storeAction    = MTLStoreActionMultisampleResolve;
     }
-    pass.depthAttachment.texture         = depth;
-    pass.depthAttachment.loadAction      = MTLLoadActionClear;
-    pass.depthAttachment.clearDepth      = 1;
-    pass.stencilAttachment.texture       = depth;
-    pass.stencilAttachment.loadAction    = MTLLoadActionClear;
-    commands[slot]                       = [[queue commandBuffer] retain];
+    pass.depthAttachment.texture      = depth;
+    pass.depthAttachment.loadAction   = MTLLoadActionClear;
+    pass.depthAttachment.clearDepth   = 1;
+    pass.stencilAttachment.texture    = depth;
+    pass.stencilAttachment.loadAction = MTLLoadActionClear;
+    commands[slot]                    = [[queue commandBuffer] retain];
     [draw encodeShadowMap:commands[slot] camera:&camera];
-    auto scenePass=post ? post->begin(pass,slot) : pass;
-    auto encoder = [commands[slot] renderCommandEncoderWithDescriptor:scenePass];
+    auto scenePass = post ? post->begin(pass, slot) : pass;
+    auto encoder   = [commands[slot] renderCommandEncoderWithDescriptor:scenePass];
     [encoder setDepthStencilState:depthState];
-    const bool split=post && post->sceneEffects();
-    if(split)[draw configurePostProcess:post.get() camera:camera];
+    const bool split = post && post->sceneEffects();
+    if (split)
+      [draw configurePostProcess:post.get() camera:camera];
     [draw render:encoder camera:&camera phase:split ? ScenePhase::Opaque : ScenePhase::All];
-    if(split)
-    {
-      [encoder endEncoding];post->captureScene(commands[slot],slot,camera);
-      [draw setSceneColor:post->sceneColor(slot) depth:post->sceneDepth(slot)];
-      encoder=[commands[slot] renderCommandEncoderWithDescriptor:post->transparentPass(pass,slot)];
-      [draw render:encoder camera:&camera phase:ScenePhase::Transparent];
-    }
-    if(post)
+    if (split)
     {
       [encoder endEncoding];
-      post->prepare(commands[slot],slot);
-      encoder=[commands[slot] renderCommandEncoderWithDescriptor:pass];
-      post->encode(encoder,slot);
+      post->captureScene(commands[slot], slot, camera);
+      [draw setSceneColor:post->sceneColor(slot) depth:post->sceneDepth(slot)];
+      encoder =
+          [commands[slot] renderCommandEncoderWithDescriptor:post->transparentPass(pass, slot)];
+      [draw render:encoder camera:&camera phase:ScenePhase::Transparent];
+    }
+    if (post)
+    {
+      [encoder endEncoding];
+      post->prepare(commands[slot], slot);
+      encoder = [commands[slot] renderCommandEncoderWithDescriptor:pass];
+      post->encode(encoder, slot);
     }
     if (after)
       after(encoder);

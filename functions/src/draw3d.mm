@@ -4,7 +4,6 @@
 #include "dsemaphore.h"
 #include "model_shader_source.h"
 #include "shader_def.h"
-#include <alloy3d/metal/post_process.h>
 #import <Metal/Metal.h>
 #include <algorithm>
 #import <alloy3d/camera.h>
@@ -12,8 +11,11 @@
 #import <alloy3d/metal/font_render.h>
 #import <alloy3d/metal/memory_cache.h>
 #include <alloy3d/metal/normal_matrix.h>
+#include <alloy3d/metal/post_process.h>
 #import <alloy3d/metal/texture.h>
 #include <alloy3d/metal/vertex_buffer.h>
+#include <alloy3d/shadow_camera.h>
+#include <alloy3d/visibility.h>
 #include <arm_neon.h>
 #include <array>
 #include <cmath>
@@ -22,8 +24,6 @@
 #include <simd/simd.h>
 #include <utility>
 #include <vector>
-#include <alloy3d/visibility.h>
-#include <alloy3d/shadow_camera.h>
 
 namespace
 {
@@ -31,7 +31,7 @@ constexpr float Pi = 3.14159265358979323846f;
 
 struct DrawText3D
 {
-  Texture     *texture;
+  Texture    *texture;
   simd_float3 pos[4];
   simd_float4 color;
 
@@ -42,7 +42,8 @@ using DrawText3DPtr = std::shared_ptr<DrawText3D>;
 struct MetalModelShader final : alloy3d::ModelShader
 {
   std::shared_ptr<const int> owner;
-  id<MTLRenderPipelineState> pipelines[6] = {}; // opaque, blend, instances, blend instances, coverage, coverage instances
+  id<MTLRenderPipelineState> pipelines[6] =
+      {}; // opaque, blend, instances, blend instances, coverage, coverage instances
   ~MetalModelShader() override
   {
     for (auto pipeline : pipelines)
@@ -61,87 +62,114 @@ id<MTLFunction> NewModelFragment(id<MTLLibrary> library, bool coverage, NSError 
 
 struct DrawModel3D
 {
-  MetalModel       *model;
-  simd_float3 position;
-  simd_float3 rotation;
-  simd_float3 scale;
-  simd_float4 color;
+  MetalModel                       *model;
+  simd_float3                       position;
+  simd_float3                       rotation;
+  simd_float3                       scale;
+  simd_float4                       color;
   std::shared_ptr<MetalModelShader> shader;
   simd_float4                       parameters{};
   alloy3d::ModelHighlight3D         highlight;
-  alloy3d::ModelTextureTransform3D textureTransform;
-  uint32_t maxAnisotropy = 1;
-  bool alphaToCoverage = false;
-  float normalStrength = 1;
-  bool materialDetail = false;
-  alloy3d::ModelTransmission3D transmission;
-  simd_float2 coverage = {0,1};
-  alloy3d::ModelWind3D wind;
-  alloy3d::ModelVisibility3D visibility;
-  float softDistance = 0;
-  alloy3d::ModelScreenSpace3D screenSpace;
-  NSUInteger        instanceOffset = 0;
-  NSUInteger        instanceCount  = 0;
+  alloy3d::ModelTextureTransform3D  textureTransform;
+  uint32_t                          maxAnisotropy   = 1;
+  bool                              alphaToCoverage = false;
+  float                             normalStrength  = 1;
+  bool                              materialDetail  = false;
+  alloy3d::ModelTransmission3D      transmission;
+  simd_float2                       coverage = {0, 1};
+  alloy3d::ModelWind3D              wind;
+  alloy3d::ModelVisibility3D        visibility;
+  float                             softDistance = 0;
+  alloy3d::ModelScreenSpace3D       screenSpace;
+  NSUInteger                        instanceOffset = 0;
+  NSUInteger                        instanceCount  = 0;
 
   DrawModel3D(MetalModel *m, simd_float3 p, simd_float3 r, simd_float3 s, simd_float4 c)
-      : model([m retain]), position(p), rotation(r), scale(s), color(c) {}
+      : model([m retain]), position(p), rotation(r), scale(s), color(c)
+  {
+  }
   DrawModel3D(MetalModel *m, NSUInteger offset, NSUInteger count)
       : model([m retain]), position{}, rotation{}, scale{}, color{}, instanceOffset(offset),
         instanceCount(count)
   {
   }
-  DrawModel3D(const DrawModel3D &) = delete;
+  DrawModel3D(const DrawModel3D &)            = delete;
   DrawModel3D &operator=(const DrawModel3D &) = delete;
   DrawModel3D(DrawModel3D &&other) noexcept
       : model(std::exchange(other.model, nil)), position(other.position), rotation(other.rotation),
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
-        textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), alphaToCoverage(other.alphaToCoverage), normalStrength(other.normalStrength),
-        materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), wind(other.wind), visibility(other.visibility), softDistance(other.softDistance), screenSpace(other.screenSpace), instanceOffset(other.instanceOffset),
-        instanceCount(other.instanceCount)
+        textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy),
+        alphaToCoverage(other.alphaToCoverage), normalStrength(other.normalStrength),
+        materialDetail(other.materialDetail), transmission(other.transmission),
+        coverage(other.coverage), wind(other.wind), visibility(other.visibility),
+        softDistance(other.softDistance), screenSpace(other.screenSpace),
+        instanceOffset(other.instanceOffset), instanceCount(other.instanceCount)
   {
   }
   ~DrawModel3D() { [model release]; }
   DrawModel3D(const DrawModel3D &source, NSUInteger offset, NSUInteger count)
       : DrawModel3D(source.model, offset, count)
   {
-    shader = source.shader; parameters = source.parameters; highlight = source.highlight;
-    textureTransform = source.textureTransform; maxAnisotropy = source.maxAnisotropy; alphaToCoverage = source.alphaToCoverage;
-    normalStrength = source.normalStrength; materialDetail = source.materialDetail;
-    transmission = source.transmission; coverage = source.coverage; wind = source.wind; visibility = source.visibility; softDistance = source.softDistance; screenSpace = source.screenSpace;
+    shader           = source.shader;
+    parameters       = source.parameters;
+    highlight        = source.highlight;
+    textureTransform = source.textureTransform;
+    maxAnisotropy    = source.maxAnisotropy;
+    alphaToCoverage  = source.alphaToCoverage;
+    normalStrength   = source.normalStrength;
+    materialDetail   = source.materialDetail;
+    transmission     = source.transmission;
+    coverage         = source.coverage;
+    wind             = source.wind;
+    visibility       = source.visibility;
+    softDistance     = source.softDistance;
+    screenSpace      = source.screenSpace;
   }
   bool sameStyle(const DrawModel3D &other) const
   {
-    return screenSpace.refraction==other.screenSpace.refraction && screenSpace.refractionPixels==other.screenSpace.refractionPixels && screenSpace.reflection==other.screenSpace.reflection && screenSpace.maxDistance==other.screenSpace.maxDistance && screenSpace.thickness==other.screenSpace.thickness && softDistance == other.softDistance && visibility.visible == other.visibility.visible && visibility.castShadow == other.visibility.castShadow &&
-        shader == other.shader && simd_all(parameters == other.parameters) &&
-        highlight.strength == other.highlight.strength && highlight.shininess == other.highlight.shininess &&
-        simd_all(textureTransform.scale == other.textureTransform.scale) &&
-        simd_all(textureTransform.offset == other.textureTransform.offset) &&
-        maxAnisotropy == other.maxAnisotropy && alphaToCoverage == other.alphaToCoverage && normalStrength == other.normalStrength &&
-        wind.strength == other.wind.strength && wind.time == other.wind.time &&
-        simd_all(wind.direction == other.wind.direction) && wind.baseHeight == other.wind.baseHeight &&
-        wind.tipHeight == other.wind.tipHeight && wind.frequency == other.wind.frequency &&
-        materialDetail == other.materialDetail && transmission.strength == other.transmission.strength &&
-        simd_all(transmission.color == other.transmission.color);
+    return screenSpace.refraction == other.screenSpace.refraction &&
+           screenSpace.refractionPixels == other.screenSpace.refractionPixels &&
+           screenSpace.reflection == other.screenSpace.reflection &&
+           screenSpace.maxDistance == other.screenSpace.maxDistance &&
+           screenSpace.thickness == other.screenSpace.thickness &&
+           softDistance == other.softDistance && visibility.visible == other.visibility.visible &&
+           visibility.castShadow == other.visibility.castShadow && shader == other.shader &&
+           simd_all(parameters == other.parameters) &&
+           highlight.strength == other.highlight.strength &&
+           highlight.shininess == other.highlight.shininess &&
+           simd_all(textureTransform.scale == other.textureTransform.scale) &&
+           simd_all(textureTransform.offset == other.textureTransform.offset) &&
+           maxAnisotropy == other.maxAnisotropy && alphaToCoverage == other.alphaToCoverage &&
+           normalStrength == other.normalStrength && wind.strength == other.wind.strength &&
+           wind.time == other.wind.time && simd_all(wind.direction == other.wind.direction) &&
+           wind.baseHeight == other.wind.baseHeight && wind.tipHeight == other.wind.tipHeight &&
+           wind.frequency == other.wind.frequency && materialDetail == other.materialDetail &&
+           transmission.strength == other.transmission.strength &&
+           simd_all(transmission.color == other.transmission.color);
   }
 };
 
-float WindPhase(simd_float3 position)
+float WindPhase(simd_float3 position) { return position.x * .65f + position.z * .38f; }
+void  SetWindUniforms(MaterialUniforms &material, const DrawModel3D &draw)
 {
-  return position.x*.65f + position.z*.38f;
-}
-void SetWindUniforms(MaterialUniforms &material, const DrawModel3D &draw)
-{
-  material.wind = {draw.wind.direction.x, draw.wind.direction.y, draw.wind.strength, draw.wind.time*draw.wind.frequency};
-  material.windShape = {draw.wind.baseHeight, 1.f/(draw.wind.tipHeight-draw.wind.baseHeight), WindPhase(draw.position), 0};
+  material.wind      = {draw.wind.direction.x,
+                        draw.wind.direction.y,
+                        draw.wind.strength,
+                        draw.wind.time * draw.wind.frequency};
+  material.windShape = {draw.wind.baseHeight,
+                        1.f / (draw.wind.tipHeight - draw.wind.baseHeight),
+                        WindPhase(draw.position),
+                        0};
 }
 alloy3d::Bounds3D WindBounds(alloy3d::Bounds3D bounds, const alloy3d::ModelWind3D &wind)
 {
   if (bounds.isValid() && wind.strength > 0)
   {
-    auto expansion = simd_make_float3(std::abs(wind.direction.x)*wind.strength, 0,
-                                     std::abs(wind.direction.y)*wind.strength);
-    bounds.min -= expansion; bounds.max += expansion;
+    auto expansion = simd_make_float3(
+        std::abs(wind.direction.x) * wind.strength, 0, std::abs(wind.direction.y) * wind.strength);
+    bounds.min -= expansion;
+    bounds.max += expansion;
   }
   return bounds;
 }
@@ -154,10 +182,7 @@ struct TransparentPart
   size_t             order;
 };
 
-int ClampSegments(int value, int minValue)
-{
-  return value < minValue ? minValue : value;
-}
+int ClampSegments(int value, int minValue) { return value < minValue ? minValue : value; }
 
 void BuildBasis(simd_float3 axis, simd_float3 &basisX, simd_float3 &basisZ)
 {
@@ -209,37 +234,37 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   CGFloat        contentScale_;
   NSUInteger     pageIndex_;
 
-  id<MTLRenderPipelineState> pipelineState_;
-  id<MTLRenderPipelineState> pipelineStateText_;
+  id<MTLRenderPipelineState>                          pipelineState_;
+  id<MTLRenderPipelineState>                          pipelineStateText_;
   id<MTLRenderPipelineState>                          pipelineStateModel_[3];
   id<MTLRenderPipelineState>                          pipelineStateModelInstances_[3];
-  bool transparentBatching_;
-  bool frustumCulling_;
-  simd_float2 modelCoverage_;
-  alloy3d::ModelWind3D modelWind_;
-  alloy3d::ModelVisibility3D modelVisibility_;
-  float softDistance_;
-  alloy3d::ModelScreenSpace3D screenSpace_;
-  id<MTLTexture> sceneColor_, sceneDepth_;
-  size_t instanceUsed_;
+  bool                                                transparentBatching_;
+  bool                                                frustumCulling_;
+  simd_float2                                         modelCoverage_;
+  alloy3d::ModelWind3D                                modelWind_;
+  alloy3d::ModelVisibility3D                          modelVisibility_;
+  float                                               softDistance_;
+  alloy3d::ModelScreenSpace3D                         screenSpace_;
+  id<MTLTexture>                                      sceneColor_, sceneDepth_;
+  size_t                                              instanceUsed_;
   id<MTLDepthStencilState>                            modelDepth_[2];
   std::vector<TransparentPart>                        transparentParts_;
-  id<MTLBuffer>              uniformBuffer_[3][2];
-  alloy3d::metal::VertexBuffer<VertexDataPrim3D> vertices_[3];
-  alloy3d::metal::VertexBuffer<VertexDataPrim3D> verticesPlane_[3];
-  alloy3d::metal::VertexBuffer<VertexData3D> textVertices_[3];
-  id<MTLTexture>             whiteTexture_;
-  NSUInteger                 nbPrimitives_;
-  NSUInteger                 nbPlanes_;
-  simd_float3                lightDirection_;
-  simd_float3                lightColor_;
-  float                      ambientIntensity_;
-  float                      diffuseIntensity_;
-  FontRender                *fontRender_;
-  MemoryCache                *textTextureCache_;
-  bool releasePending_[3];
-  std::list<DrawText3DPtr>   drawTextList_;
-  std::vector<DrawModel3D>   drawModelList_;
+  id<MTLBuffer>                                       uniformBuffer_[3][2];
+  alloy3d::metal::VertexBuffer<VertexDataPrim3D>      vertices_[3];
+  alloy3d::metal::VertexBuffer<VertexDataPrim3D>      verticesPlane_[3];
+  alloy3d::metal::VertexBuffer<VertexData3D>          textVertices_[3];
+  id<MTLTexture>                                      whiteTexture_;
+  NSUInteger                                          nbPrimitives_;
+  NSUInteger                                          nbPlanes_;
+  simd_float3                                         lightDirection_;
+  simd_float3                                         lightColor_;
+  float                                               ambientIntensity_;
+  float                                               diffuseIntensity_;
+  FontRender                                         *fontRender_;
+  MemoryCache                                        *textTextureCache_;
+  bool                                                releasePending_[3];
+  std::list<DrawText3DPtr>                            drawTextList_;
+  std::vector<DrawModel3D>                            drawModelList_;
   std::vector<alloy3d::ModelInstance>                 modelInstances_;
   alloy3d::metal::VertexBuffer<ModelInstanceUniforms> instanceBuffers_[3];
   NSUInteger                                          modelDrawCalls_;
@@ -248,20 +273,20 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   std::shared_ptr<MetalModelShader> modelShader_;
   simd_float4                       shaderParameters_;
   alloy3d::ModelHighlight3D         modelHighlight_;
-  alloy3d::ModelTextureTransform3D modelTextureTransform_;
-  alloy3d::ModelTextureSampling3D modelTextureSampling_;
-  alloy3d::ModelNormalMapping3D modelNormalMapping_;
-  alloy3d::ModelMaterialDetail3D modelMaterialDetail_;
-  alloy3d::ModelTransmission3D modelTransmission_;
-  id<MTLSamplerState> modelSamplers_[17]; // Bounded lazy cache, index 1..16.
+  alloy3d::ModelTextureTransform3D  modelTextureTransform_;
+  alloy3d::ModelTextureSampling3D   modelTextureSampling_;
+  alloy3d::ModelNormalMapping3D     modelNormalMapping_;
+  alloy3d::ModelMaterialDetail3D    modelMaterialDetail_;
+  alloy3d::ModelTransmission3D      modelTransmission_;
+  id<MTLSamplerState>               modelSamplers_[17]; // Bounded lazy cache, index 1..16.
 
-  SimpleLock primLock_;
-  SimpleLock planeLock_;
+  SimpleLock                   primLock_;
+  SimpleLock                   planeLock_;
   alloy3d::DirectionalShadow3D shadowSettings_;
-  alloy3d::Fog3D fogSettings_;
-  alloy3d::HemisphereLight3D hemisphereSettings_;
-  alloy3d::HeightFog3D heightFogSettings_;
-  float fogInverseRange_;
+  alloy3d::Fog3D               fogSettings_;
+  alloy3d::HemisphereLight3D   hemisphereSettings_;
+  alloy3d::HeightFog3D         heightFogSettings_;
+  float                        fogInverseRange_;
   id<MTLTexture>               shadowMaps_[3];
   id<MTLTexture>               shadowFallback_;
   id<MTLRenderPipelineState>   shadowPipelines_[3]; // primitive, model, instanced model
@@ -321,36 +346,43 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   pipelineDesc.fragmentFunction = fragmentFunction;
 
   auto coverageFragment = NewModelFragment(library, true, &error);
-  if (!fragmentFunction || !coverageFragment) throw std::runtime_error("Alloy3D model fragment specialization failed");
+  if (!fragmentFunction || !coverageFragment)
+    throw std::runtime_error("Alloy3D model fragment specialization failed");
   for (int mode = 0; mode < 3; ++mode)
   {
-    bool blend = mode == 1;
-    pipelineDesc.fragmentFunction = mode == 2 ? coverageFragment : fragmentFunction;
-    pipelineDesc.alphaToCoverageEnabled = pipelineDesc.alphaToOneEnabled = sampleCount_ > 1 && mode == 2;
-    colorAttachment.blendingEnabled = blend;
-    colorAttachment.sourceAlphaBlendFactor = MTLBlendFactorOne;
+    bool blend                          = mode == 1;
+    pipelineDesc.fragmentFunction       = mode == 2 ? coverageFragment : fragmentFunction;
+    pipelineDesc.alphaToCoverageEnabled = pipelineDesc.alphaToOneEnabled =
+        sampleCount_ > 1 && mode == 2;
+    colorAttachment.blendingEnabled             = blend;
+    colorAttachment.sourceAlphaBlendFactor      = MTLBlendFactorOne;
     colorAttachment.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-    pipelineStateModel_[mode] = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
-    if (!pipelineStateModel_[mode]) throw std::runtime_error("Alloy3D model pipeline creation failed");
+    pipelineStateModel_[mode] = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc
+                                                                        error:&error];
+    if (!pipelineStateModel_[mode])
+      throw std::runtime_error("Alloy3D model pipeline creation failed");
     if (mode < 2)
     {
-      auto depth = [[MTLDepthStencilDescriptor alloc] init];
+      auto depth                 = [[MTLDepthStencilDescriptor alloc] init];
       depth.depthCompareFunction = MTLCompareFunctionLess;
-      depth.depthWriteEnabled = !blend;
-      modelDepth_[mode] = [device_ newDepthStencilStateWithDescriptor:depth];
+      depth.depthWriteEnabled    = !blend;
+      modelDepth_[mode]          = [device_ newDepthStencilStateWithDescriptor:depth];
       [depth release];
     }
   }
   [vertexFunction release];
-  vertexFunction = [library newFunctionWithName:@"modelInstanceVert3d"];
+  vertexFunction              = [library newFunctionWithName:@"modelInstanceVert3d"];
   pipelineDesc.vertexFunction = vertexFunction;
   for (int mode = 0; mode < 3; ++mode)
   {
-    pipelineDesc.fragmentFunction = mode == 2 ? coverageFragment : fragmentFunction;
-    pipelineDesc.alphaToCoverageEnabled = pipelineDesc.alphaToOneEnabled = sampleCount_ > 1 && mode == 2;
-    colorAttachment.blendingEnabled = mode == 1;
-    pipelineStateModelInstances_[mode] = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
-    if (!pipelineStateModelInstances_[mode]) throw std::runtime_error("Alloy3D instance pipeline creation failed");
+    pipelineDesc.fragmentFunction       = mode == 2 ? coverageFragment : fragmentFunction;
+    pipelineDesc.alphaToCoverageEnabled = pipelineDesc.alphaToOneEnabled =
+        sampleCount_ > 1 && mode == 2;
+    colorAttachment.blendingEnabled    = mode == 1;
+    pipelineStateModelInstances_[mode] = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc
+                                                                                 error:&error];
+    if (!pipelineStateModelInstances_[mode])
+      throw std::runtime_error("Alloy3D instance pipeline creation failed");
   }
   [vertexFunction release];
   [fragmentFunction release];
@@ -391,12 +423,15 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   return [self createModelShader:source materialStage:false diagnostics:diagnostics];
 }
 
-- (alloy3d::ModelShaderPtr)createModelMaterialShader:(std::string_view)source diagnostics:(std::string &)diagnostics
+- (alloy3d::ModelShaderPtr)createModelMaterialShader:(std::string_view)source
+                                         diagnostics:(std::string &)diagnostics
 {
   return [self createModelShader:source materialStage:true diagnostics:diagnostics];
 }
 
-- (alloy3d::ModelShaderPtr)createModelShader:(std::string_view)source materialStage:(bool)materialStage diagnostics:(std::string &)diagnostics
+- (alloy3d::ModelShaderPtr)createModelShader:(std::string_view)source
+                               materialStage:(bool)materialStage
+                                 diagnostics:(std::string &)diagnostics
 {
   diagnostics.clear();
   if (source.empty() || source.find('\0') != std::string_view::npos)
@@ -407,11 +442,13 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   @autoreleasepool
   {
     std::string combined = "#include <metal_stdlib>\n#define ALLOY3D_CUSTOM_SURFACE 1\n";
-    if (materialStage) combined += "#define ALLOY3D_CUSTOM_MATERIAL 1\n";
+    if (materialStage)
+      combined += "#define ALLOY3D_CUSTOM_MATERIAL 1\n";
     combined += ModelShaderPrefix;
     combined += "\n#line 1 \"model_surface_user.metal\"\n";
     combined.append(source);
-    if (materialStage) combined += "\nfloat3 alloy3dShade(ModelSurface s,float4 p){return s.litColor;}\n";
+    if (materialStage)
+      combined += "\nfloat3 alloy3dShade(ModelSurface s,float4 p){return s.litColor;}\n";
     combined += "\n#line 1 \"simple3d.metal\"\n";
     combined += ModelShaderBody;
     auto text = [[[NSString alloc] initWithBytes:combined.data()
@@ -437,10 +474,13 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     descriptor.rasterSampleCount = sampleCount_;
     descriptor.depthAttachmentPixelFormat   = depthFormat_;
     descriptor.stencilAttachmentPixelFormat = depthFormat_;
-    auto baseFragment = [NewModelFragment(library, false, &error) autorelease];
+    auto baseFragment     = [NewModelFragment(library, false, &error) autorelease];
     auto coverageFragment = [NewModelFragment(library, true, &error) autorelease];
     if (!baseFragment || !coverageFragment)
-    { diagnostics = error ? error.localizedDescription.UTF8String : "Model specialization failed"; return {}; }
+    {
+      diagnostics = error ? error.localizedDescription.UTF8String : "Model specialization failed";
+      return {};
+    }
     auto color                        = descriptor.colorAttachments[0];
     color.pixelFormat                 = colorFormat_;
     color.sourceRGBBlendFactor        = MTLBlendFactorSourceAlpha;
@@ -449,11 +489,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     color.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
     for (int i = 0; i < 6; ++i)
     {
-      descriptor.vertexFunction = [[library
-          newFunctionWithName:(i == 2 || i == 3 || i == 5) ? @"modelInstanceVert3d" : @"modelVert3d"] autorelease];
-      descriptor.fragmentFunction = i >= 4 ? coverageFragment : baseFragment;
+      descriptor.vertexFunction =
+          [[library newFunctionWithName:(i == 2 || i == 3 || i == 5) ? @"modelInstanceVert3d"
+                                                                     : @"modelVert3d"] autorelease];
+      descriptor.fragmentFunction       = i >= 4 ? coverageFragment : baseFragment;
       descriptor.alphaToCoverageEnabled = descriptor.alphaToOneEnabled = sampleCount_ > 1 && i >= 4;
-      color.blendingEnabled = i == 1 || i == 3;
+      color.blendingEnabled                                            = i == 1 || i == 3;
       shader->pipelines[i] = [device_ newRenderPipelineStateWithDescriptor:descriptor error:&error];
       if (!shader->pipelines[i])
       {
@@ -491,14 +532,15 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 {
   if (!modelSamplers_[anisotropy])
   {
-    auto desc = [[MTLSamplerDescriptor alloc] init];
+    auto desc      = [[MTLSamplerDescriptor alloc] init];
     desc.minFilter = desc.magFilter = MTLSamplerMinMagFilterLinear;
-    desc.mipFilter = MTLSamplerMipFilterLinear;
+    desc.mipFilter                  = MTLSamplerMipFilterLinear;
     desc.sAddressMode = desc.tAddressMode = desc.rAddressMode = MTLSamplerAddressModeRepeat;
-    desc.maxAnisotropy = anisotropy;
+    desc.maxAnisotropy                                        = anisotropy;
     auto sampler = [device_ newSamplerStateWithDescriptor:desc];
     [desc release];
-    if (!sampler) throw std::bad_alloc();
+    if (!sampler)
+      throw std::bad_alloc();
     modelSamplers_[anisotropy] = sampler;
   }
   return modelSamplers_[anisotropy];
@@ -527,8 +569,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 - (void)setModelTransmission:(const alloy3d::ModelTransmission3D &)transmission
 {
   auto color = transmission.color;
-  if (!std::isfinite(transmission.strength) || transmission.strength < 0 || transmission.strength > 1 ||
-      !simd_all(color >= 0) || !simd_all(color <= 1))
+  if (!std::isfinite(transmission.strength) || transmission.strength < 0 ||
+      transmission.strength > 1 || !simd_all(color >= 0) || !simd_all(color <= 1))
     throw std::invalid_argument("Alloy3D transmission strength and color must be finite in [0,1]");
   modelTransmission_ = transmission;
 }
@@ -556,9 +598,9 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
   whiteTexture_ = [device_ newTextureWithDescriptor:texdesc];
   [whiteTexture_ replaceRegion:MTLRegionMake2D(0, 0, 1, 1)
-                    mipmapLevel:0
-                      withBytes:pixel
-                    bytesPerRow:4];
+                   mipmapLevel:0
+                     withBytes:pixel
+                   bytesPerRow:4];
   [texdesc release];
 }
 
@@ -569,16 +611,18 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   return [self initWithMetalKitView:view shaderlib:library colorFormat:view.colorPixelFormat];
 }
 
-- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view shaderlib:(nonnull id<MTLLibrary>)library colorFormat:(MTLPixelFormat)format
+- (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view
+                                   shaderlib:(nonnull id<MTLLibrary>)library
+                                 colorFormat:(MTLPixelFormat)format
 {
   [super init];
 
-  modelCoverage_ = {0,1};
-  shaderOwner_      = std::make_shared<const int>(0);
-  device_           = view.device;
-  colorFormat_      = format;
-  depthFormat_      = view.depthStencilPixelFormat;
-  sampleCount_      = view.sampleCount;
+  modelCoverage_ = {0, 1};
+  shaderOwner_   = std::make_shared<const int>(0);
+  device_        = view.device;
+  colorFormat_   = format;
+  depthFormat_   = view.depthStencilPixelFormat;
+  sampleCount_   = view.sampleCount;
   [self modelSampler:1];
   contentScale_     = [[NSScreen mainScreen] backingScaleFactor];
   pageIndex_        = 0;
@@ -593,11 +637,13 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
   for (int i = 0; i < 3; i++)
   {
-    for (int phase=0;phase<2;++phase) uniformBuffer_[i][phase] = [device_ newBufferWithLength:sizeof(Uniforms)
-                                             options:MTLResourceStorageModeShared];
+    for (int phase = 0; phase < 2; ++phase)
+      uniformBuffer_[i][phase] = [device_ newBufferWithLength:sizeof(Uniforms)
+                                                      options:MTLResourceStorageModeShared];
   }
-  fontRender_           = [[FontRender alloc] init];
-  textTextureCache_ = [[MemoryCache alloc] initWithLimit:alloy3d::TextCacheBudget{}.textureBytes / 2];
+  fontRender_ = [[FontRender alloc] init];
+  textTextureCache_ =
+      [[MemoryCache alloc] initWithLimit:alloy3d::TextCacheBudget{}.textureBytes / 2];
 
   [fontRender_ SetSize:64.0f];
 
@@ -607,10 +653,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 //
 - (void)dealloc
 {
-  for (auto sampler : modelSamplers_) [sampler release];
+  for (auto sampler : modelSamplers_)
+    [sampler release];
   for (int i = 0; i < 3; i++)
   {
-    for(auto buffer:uniformBuffer_[i]) [buffer release];
+    for (auto buffer : uniformBuffer_[i])
+      [buffer release];
     [shadowMaps_[i] release];
     [shadowPipelines_[i] release];
   }
@@ -621,9 +669,11 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   for (int blend = 0; blend < 3; ++blend)
   {
     [pipelineStateModel_[blend] release];
-    if (blend < 2) [modelDepth_[blend] release];
+    if (blend < 2)
+      [modelDepth_[blend] release];
   }
-  for (auto pipeline : pipelineStateModelInstances_) [pipeline release];
+  for (auto pipeline : pipelineStateModelInstances_)
+    [pipeline release];
   [whiteTexture_ release];
   [shadowFallback_ release];
   [super dealloc];
@@ -633,7 +683,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 - (void)drawLine:(simd_float3)from to:(simd_float3)to color:(simd_float4)color
 {
   SimpleGuard guard(primLock_);
-  auto *vtx3d = vertices_[pageIndex_].append(device_, nbPrimitives_, 2);
+  auto       *vtx3d = vertices_[pageIndex_].append(device_, nbPrimitives_, 2);
   nbPrimitives_ += 2;
 
   auto col16        = vcvt_f16_f32(color);
@@ -671,7 +721,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                color:(simd_float4)color
 {
   SimpleGuard guard(planeLock_);
-  auto *vtx3d = verticesPlane_[pageIndex_].append(device_, nbPlanes_, 3);
+  auto       *vtx3d = verticesPlane_[pageIndex_].append(device_, nbPlanes_, 3);
   nbPlanes_ += 3;
 
   auto col16        = vcvt_f16_f32(color);
@@ -729,14 +779,15 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   if (static_cast<NSUInteger>(slices) > maxCells / static_cast<NSUInteger>(stacks))
     throw std::length_error("Alloy3D sphere exceeds device capacity");
   const NSUInteger vertexCount = static_cast<NSUInteger>(slices) * stacks * 6;
-  SimpleGuard guard(planeLock_);
-  auto *vertex = verticesPlane_[pageIndex_].append(device_, nbPlanes_, vertexCount);
+  SimpleGuard      guard(planeLock_);
+  auto            *vertex = verticesPlane_[pageIndex_].append(device_, nbPlanes_, vertexCount);
   nbPlanes_ += vertexCount;
   const auto col16 = vcvt_f16_f32(color);
-  auto emit = [&](simd_float3 position, simd_float3 normal) {
+  auto       emit  = [&](simd_float3 position, simd_float3 normal)
+  {
     vertex->position = position;
-    vertex->normal = normal;
-    vertex->color = col16;
+    vertex->normal   = normal;
+    vertex->color    = col16;
     ++vertex;
   };
 
@@ -753,8 +804,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
       auto makeNormal = [](float phi, float theta)
       {
         float sinPhi = std::sin(phi);
-        return simd_make_float3(sinPhi * std::cos(theta), std::cos(phi),
-                                sinPhi * std::sin(theta));
+        return simd_make_float3(sinPhi * std::cos(theta), std::cos(phi), sinPhi * std::sin(theta));
       };
 
       auto n00 = makeNormal(phi0, theta0);
@@ -766,8 +816,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
       auto p11 = center + n11 * radius;
       auto p01 = center + n01 * radius;
 
-      emit(p00, n00); emit(p10, n10); emit(p11, n11);
-      emit(p00, n00); emit(p11, n11); emit(p01, n01);
+      emit(p00, n00);
+      emit(p10, n10);
+      emit(p11, n11);
+      emit(p00, n00);
+      emit(p11, n11);
+      emit(p01, n01);
     }
   }
 }
@@ -872,10 +926,20 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
     [self drawTriangle:b0 normal:n0 p1:t0 normal:n0 p2:t1 normal:n1 color:color];
     [self drawTriangle:b0 normal:n0 p1:t1 normal:n1 p2:b1 normal:n1 color:color];
-    [self drawTriangle:bottomCenter normal:bottomNormal p1:b1 normal:bottomNormal p2:b0
-                normal:bottomNormal color:color];
-    [self drawTriangle:topCenter normal:topNormal p1:t0 normal:topNormal p2:t1 normal:topNormal
-                color:color];
+    [self drawTriangle:bottomCenter
+                normal:bottomNormal
+                    p1:b1
+                normal:bottomNormal
+                    p2:b0
+                normal:bottomNormal
+                 color:color];
+    [self drawTriangle:topCenter
+                normal:topNormal
+                    p1:t0
+                normal:topNormal
+                    p2:t1
+                normal:topNormal
+                 color:color];
   }
 }
 
@@ -907,12 +971,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   simd_float3 axisZ;
   BuildEulerBasis(rotation, axisX, axisY, axisZ);
 
-  [self drawCone:center
-       direction:axisY
-          radius:radius
-          height:height
-           color:color
-        segments:segments];
+  [self drawCone:center direction:axisY radius:radius height:height color:color segments:segments];
 }
 
 //
@@ -930,29 +989,34 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
   segments = ClampSegments(segments, 3);
 
-  auto axis         = simd_normalize(direction);
-  auto bottomCenter = center - axis * (height * 0.5f);
-  auto apex         = center + axis * (height * 0.5f);
-  auto bottomNormal = -axis;
+  auto        axis         = simd_normalize(direction);
+  auto        bottomCenter = center - axis * (height * 0.5f);
+  auto        apex         = center + axis * (height * 0.5f);
+  auto        bottomNormal = -axis;
   simd_float3 basisX;
   simd_float3 basisZ;
   BuildBasis(axis, basisX, basisZ);
 
   for (int segment = 0; segment < segments; segment++)
   {
-    float theta0 = 2.0f * Pi * (float)segment / (float)segments;
-    float theta1 = 2.0f * Pi * (float)(segment + 1) / (float)segments;
-    auto  d0     = basisX * std::cos(theta0) + basisZ * std::sin(theta0);
-    auto  d1     = basisX * std::cos(theta1) + basisZ * std::sin(theta1);
-    auto  b0     = bottomCenter + d0 * radius;
-    auto  b1     = bottomCenter + d1 * radius;
-    auto  n0     = simd_normalize(d0 * height + axis * radius);
-    auto  n1     = simd_normalize(d1 * height + axis * radius);
+    float theta0     = 2.0f * Pi * (float)segment / (float)segments;
+    float theta1     = 2.0f * Pi * (float)(segment + 1) / (float)segments;
+    auto  d0         = basisX * std::cos(theta0) + basisZ * std::sin(theta0);
+    auto  d1         = basisX * std::cos(theta1) + basisZ * std::sin(theta1);
+    auto  b0         = bottomCenter + d0 * radius;
+    auto  b1         = bottomCenter + d1 * radius;
+    auto  n0         = simd_normalize(d0 * height + axis * radius);
+    auto  n1         = simd_normalize(d1 * height + axis * radius);
     auto  apexNormal = simd_normalize(n0 + n1);
 
     [self drawTriangle:b0 normal:n0 p1:b1 normal:n1 p2:apex normal:apexNormal color:color];
-    [self drawTriangle:bottomCenter normal:bottomNormal p1:b1 normal:bottomNormal p2:b0
-                normal:bottomNormal color:color];
+    [self drawTriangle:bottomCenter
+                normal:bottomNormal
+                    p1:b1
+                normal:bottomNormal
+                    p2:b0
+                normal:bottomNormal
+                 color:color];
   }
 }
 
@@ -1007,7 +1071,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                if (texture == nil)
                {
                  texture = [[Texture alloc] initWithMemory:ctx device:device_];
-                 [textTextureCache_ setObject:texture forKey:cacheKey
+                 [textTextureCache_ setObject:texture
+                                       forKey:cacheKey
                                          cost:texture.object.allocatedSize];
                }
                else
@@ -1093,7 +1158,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
 - (void)setDirectionalShadow:(const alloy3d::DirectionalShadow3D &)settings
 {
-  alloy3d::BuildDirectionalShadowCamera3D(settings, lightDirection_); // validate before changing live settings
+  alloy3d::BuildDirectionalShadowCamera3D(
+      settings, lightDirection_); // validate before changing live settings
   shadowSettings_ = settings;
 }
 
@@ -1107,34 +1173,40 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   const float inverseRange = 1.0f / (fog.end - fog.start);
   if (!std::isfinite(inverseRange))
     throw std::invalid_argument("Alloy3D fog range is too small");
-  fogSettings_ = fog;
+  fogSettings_     = fog;
   fogInverseRange_ = inverseRange;
 }
 
 - (void)setSceneColor:(id<MTLTexture>)color depth:(id<MTLTexture>)depth
 {
-  sceneColor_=color;sceneDepth_=depth;
+  sceneColor_ = color;
+  sceneDepth_ = depth;
 }
-- (void)configurePostProcess:(alloy3d::metal::PostProcess *)post camera:(const alloy3d::CameraData &)camera
+- (void)configurePostProcess:(alloy3d::metal::PostProcess *)post
+                      camera:(const alloy3d::CameraData &)camera
 {
-  post->setVolumeScene(camera,lightDirection_,lightColor_*diffuseIntensity_,lightViewProjection_,
-    simd_float4{shadowReady_ ? 1.f : 0.f,shadowSettings_.depthBias,0,0},
-    shadowReady_ ? shadowMaps_[pageIndex_] : shadowFallback_);
+  post->setVolumeScene(camera,
+                       lightDirection_,
+                       lightColor_ * diffuseIntensity_,
+                       lightViewProjection_,
+                       simd_float4{shadowReady_ ? 1.f : 0.f, shadowSettings_.depthBias, 0, 0},
+                       shadowReady_ ? shadowMaps_[pageIndex_] : shadowFallback_);
 }
 - (void)setModelScreenSpace:(const alloy3d::ModelScreenSpace3D &)s
 {
-  if(!std::isfinite(s.refraction) || s.refraction<0 || s.refraction>1 ||
-     !std::isfinite(s.reflection) || s.reflection<0 || s.reflection>1 ||
-     !std::isfinite(s.refractionPixels) || s.refractionPixels<0 || s.refractionPixels>128 ||
-     !std::isfinite(s.maxDistance) || s.maxDistance<=0 || s.maxDistance>1000 ||
-     !std::isfinite(s.thickness) || s.thickness<=0 || s.thickness>10)
+  if (!std::isfinite(s.refraction) || s.refraction < 0 || s.refraction > 1 ||
+      !std::isfinite(s.reflection) || s.reflection < 0 || s.reflection > 1 ||
+      !std::isfinite(s.refractionPixels) || s.refractionPixels < 0 || s.refractionPixels > 128 ||
+      !std::isfinite(s.maxDistance) || s.maxDistance <= 0 || s.maxDistance > 1000 ||
+      !std::isfinite(s.thickness) || s.thickness <= 0 || s.thickness > 10)
     throw std::invalid_argument("Invalid screen-space surface settings");
-  screenSpace_=s;
+  screenSpace_ = s;
 }
 - (void)setModelSoftParticles:(float)distance
 {
-  if(!std::isfinite(distance) || distance<0 || distance>100)throw std::invalid_argument("Soft particle distance must be in [0,100]");
-  softDistance_=distance;
+  if (!std::isfinite(distance) || distance < 0 || distance > 100)
+    throw std::invalid_argument("Soft particle distance must be in [0,100]");
+  softDistance_ = distance;
 }
 - (void)setModelVisibility:(const alloy3d::ModelVisibility3D &)visibility
 {
@@ -1145,16 +1217,18 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 {
   if (!std::isfinite(wind.strength) || wind.strength < 0 || wind.strength > 10 ||
       !std::isfinite(wind.time) || !simd_all(simd_abs(wind.direction) < INFINITY) ||
-      !std::isfinite(wind.baseHeight) || !std::isfinite(wind.tipHeight) || wind.tipHeight <= wind.baseHeight ||
-      !std::isfinite(1.f/(wind.tipHeight-wind.baseHeight)) ||
-      !std::isfinite(wind.frequency) || wind.frequency < 0 || wind.frequency > 100 ||
-      !std::isfinite(wind.time*wind.frequency))
-    throw std::invalid_argument("Alloy3D wind requires finite parameters, strength in [0,10], frequency in [0,100], tip above base");
-  auto direction = simd_make_double2(wind.direction.x,wind.direction.y);
-  if (simd_length_squared(direction) == 0) throw std::invalid_argument("Alloy3D wind direction is zero");
-  direction = simd_normalize(direction);
-  modelWind_ = wind;
-  modelWind_.direction = simd_make_float2(direction.x,direction.y);
+      !std::isfinite(wind.baseHeight) || !std::isfinite(wind.tipHeight) ||
+      wind.tipHeight <= wind.baseHeight ||
+      !std::isfinite(1.f / (wind.tipHeight - wind.baseHeight)) || !std::isfinite(wind.frequency) ||
+      wind.frequency < 0 || wind.frequency > 100 || !std::isfinite(wind.time * wind.frequency))
+    throw std::invalid_argument("Alloy3D wind requires finite parameters, strength in [0,10], "
+                                "frequency in [0,100], tip above base");
+  auto direction = simd_make_double2(wind.direction.x, wind.direction.y);
+  if (simd_length_squared(direction) == 0)
+    throw std::invalid_argument("Alloy3D wind direction is zero");
+  direction            = simd_normalize(direction);
+  modelWind_           = wind;
+  modelWind_.direction = simd_make_float2(direction.x, direction.y);
 }
 
 - (void)setModelCoverage:(simd_float2)interval
@@ -1176,11 +1250,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
 - (void)setHeightFog:(const alloy3d::HeightFog3D &)fog
 {
-  if (!simd_all(fog.color >= 0) || !simd_all(fog.color <= 1) ||
-      !std::isfinite(fog.baseHeight) || !std::isfinite(fog.density) || fog.density < 0 || fog.density > 1 ||
+  if (!simd_all(fog.color >= 0) || !simd_all(fog.color <= 1) || !std::isfinite(fog.baseHeight) ||
+      !std::isfinite(fog.density) || fog.density < 0 || fog.density > 1 ||
       !std::isfinite(fog.falloff) || fog.falloff < 0 || fog.falloff > 100 ||
       !std::isfinite(fog.maxOpacity) || fog.maxOpacity < 0 || fog.maxOpacity > 1)
-    throw std::invalid_argument("Alloy3D height fog requires finite height, RGB/density/opacity in [0,1], falloff in [0,100]");
+    throw std::invalid_argument("Alloy3D height fog requires finite height, RGB/density/opacity in "
+                                "[0,1], falloff in [0,100]");
   heightFogSettings_ = fog;
 }
 
@@ -1188,16 +1263,16 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 {
   for (int i = 0; i < 3; ++i)
     if (!std::isfinite(light.skyColor[i]) || light.skyColor[i] < 0 || light.skyColor[i] > 1 ||
-        !std::isfinite(light.groundColor[i]) || light.groundColor[i] < 0 || light.groundColor[i] > 1 ||
-        !std::isfinite(light.up[i]))
+        !std::isfinite(light.groundColor[i]) || light.groundColor[i] < 0 ||
+        light.groundColor[i] > 1 || !std::isfinite(light.up[i]))
       throw std::invalid_argument("Alloy3D hemisphere requires finite up and RGB in [0,1]");
   if (!std::isfinite(light.intensity) || light.intensity < 0 || light.intensity > 1)
     throw std::invalid_argument("Alloy3D hemisphere intensity must be in [0,1]");
   auto up = simd_make_double3(light.up.x, light.up.y, light.up.z);
   if (simd_length_squared(up) == 0)
     throw std::invalid_argument("Alloy3D hemisphere up is zero");
-  up = simd_normalize(up);
-  hemisphereSettings_ = light;
+  up                     = simd_normalize(up);
+  hemisphereSettings_    = light;
   hemisphereSettings_.up = simd_make_float3(up.x, up.y, up.z);
 }
 
@@ -1217,7 +1292,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     target.coverage        = source.coverage;
     target.windPhase       = WindPhase(source.position);
   }
-  instanceUsed_ = modelInstances_.size();
+  instanceUsed_      = modelInstances_.size();
   instancesPrepared_ = true;
 }
 
@@ -1279,7 +1354,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   uniform.perspectiveTransform = simd_mul(lightViewProjection_, simd_inverse(view));
   for (const auto &draw : drawModelList_)
   {
-    if(!draw.visibility.castShadow)continue;
+    if (!draw.visibility.castShadow)
+      continue;
     bool instanced = draw.instanceCount != 0;
     if (!instanced && draw.color.w < 1)
       continue;
@@ -1300,7 +1376,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
       [encoder setFragmentSamplerState:[self modelSampler:draw.maxAnisotropy] atIndex:0];
       MaterialUniforms material{
           {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)},
-          {}, simd_make_float4(draw.textureTransform.scale, draw.textureTransform.offset)};
+          {},
+          simd_make_float4(draw.textureTransform.scale, draw.textureTransform.offset)};
       material.coverage = draw.coverage;
       SetWindUniforms(material, draw);
       [encoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
@@ -1338,20 +1415,20 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 
   SimpleGuard guard(modelLock_);
   drawModelList_.emplace_back(model, position, rotation, scale, color);
-  drawModelList_.back().shader     = modelShader_;
-  drawModelList_.back().parameters = shaderParameters_;
-  drawModelList_.back().highlight = modelHighlight_;
+  drawModelList_.back().shader           = modelShader_;
+  drawModelList_.back().parameters       = shaderParameters_;
+  drawModelList_.back().highlight        = modelHighlight_;
   drawModelList_.back().textureTransform = modelTextureTransform_;
-  drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
-  drawModelList_.back().alphaToCoverage = modelTextureSampling_.alphaToCoverage;
-  drawModelList_.back().normalStrength = modelNormalMapping_.strength;
-  drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
-  drawModelList_.back().transmission = modelTransmission_;
-  drawModelList_.back().wind = modelWind_;
-  drawModelList_.back().visibility = modelVisibility_;
-  drawModelList_.back().softDistance = softDistance_;
-  drawModelList_.back().screenSpace = screenSpace_;
-  drawModelList_.back().coverage = modelCoverage_;
+  drawModelList_.back().maxAnisotropy    = modelTextureSampling_.maxAnisotropy;
+  drawModelList_.back().alphaToCoverage  = modelTextureSampling_.alphaToCoverage;
+  drawModelList_.back().normalStrength   = modelNormalMapping_.strength;
+  drawModelList_.back().materialDetail   = modelMaterialDetail_.enabled;
+  drawModelList_.back().transmission     = modelTransmission_;
+  drawModelList_.back().wind             = modelWind_;
+  drawModelList_.back().visibility       = modelVisibility_;
+  drawModelList_.back().softDistance     = softDistance_;
+  drawModelList_.back().screenSpace      = screenSpace_;
+  drawModelList_.back().coverage         = modelCoverage_;
 }
 
 - (void)drawModelInstances:(MetalModel *)model
@@ -1379,20 +1456,20 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     for (const auto &i : instances)
     {
       drawModelList_.emplace_back(model, i.position, i.rotation, i.scale, i.color);
-      drawModelList_.back().shader     = modelShader_;
-      drawModelList_.back().parameters = shaderParameters_;
-      drawModelList_.back().highlight = modelHighlight_;
+      drawModelList_.back().shader           = modelShader_;
+      drawModelList_.back().parameters       = shaderParameters_;
+      drawModelList_.back().highlight        = modelHighlight_;
       drawModelList_.back().textureTransform = modelTextureTransform_;
-      drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
-  drawModelList_.back().alphaToCoverage = modelTextureSampling_.alphaToCoverage;
-      drawModelList_.back().normalStrength = modelNormalMapping_.strength;
-      drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
-      drawModelList_.back().transmission = modelTransmission_;
-  drawModelList_.back().wind = modelWind_;
-  drawModelList_.back().visibility = modelVisibility_;
-  drawModelList_.back().softDistance = softDistance_;
-  drawModelList_.back().screenSpace = screenSpace_;
-      drawModelList_.back().coverage = i.coverage;
+      drawModelList_.back().maxAnisotropy    = modelTextureSampling_.maxAnisotropy;
+      drawModelList_.back().alphaToCoverage  = modelTextureSampling_.alphaToCoverage;
+      drawModelList_.back().normalStrength   = modelNormalMapping_.strength;
+      drawModelList_.back().materialDetail   = modelMaterialDetail_.enabled;
+      drawModelList_.back().transmission     = modelTransmission_;
+      drawModelList_.back().wind             = modelWind_;
+      drawModelList_.back().visibility       = modelVisibility_;
+      drawModelList_.back().softDistance     = softDistance_;
+      drawModelList_.back().screenSpace      = screenSpace_;
+      drawModelList_.back().coverage         = i.coverage;
     }
     return;
   }
@@ -1401,19 +1478,19 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   try
   {
     drawModelList_.emplace_back(model, offset, instances.size());
-    drawModelList_.back().shader     = modelShader_;
-    drawModelList_.back().parameters = shaderParameters_;
-    drawModelList_.back().highlight = modelHighlight_;
+    drawModelList_.back().shader           = modelShader_;
+    drawModelList_.back().parameters       = shaderParameters_;
+    drawModelList_.back().highlight        = modelHighlight_;
     drawModelList_.back().textureTransform = modelTextureTransform_;
-    drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
-  drawModelList_.back().alphaToCoverage = modelTextureSampling_.alphaToCoverage;
-    drawModelList_.back().normalStrength = modelNormalMapping_.strength;
-    drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
-    drawModelList_.back().transmission = modelTransmission_;
-  drawModelList_.back().wind = modelWind_;
-  drawModelList_.back().visibility = modelVisibility_;
-  drawModelList_.back().softDistance = softDistance_;
-  drawModelList_.back().screenSpace = screenSpace_;
+    drawModelList_.back().maxAnisotropy    = modelTextureSampling_.maxAnisotropy;
+    drawModelList_.back().alphaToCoverage  = modelTextureSampling_.alphaToCoverage;
+    drawModelList_.back().normalStrength   = modelNormalMapping_.strength;
+    drawModelList_.back().materialDetail   = modelMaterialDetail_.enabled;
+    drawModelList_.back().transmission     = modelTransmission_;
+    drawModelList_.back().wind             = modelWind_;
+    drawModelList_.back().visibility       = modelVisibility_;
+    drawModelList_.back().softDistance     = softDistance_;
+    drawModelList_.back().screenSpace      = screenSpace_;
   }
   catch (...)
   {
@@ -1434,14 +1511,16 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   [self render:renderEncoder camera:camera phase:ScenePhase::All];
 }
 - (void)render:(nullable id<MTLRenderCommandEncoder>)renderEncoder
-        camera:(nonnull alloy3d::CameraData *)camera phase:(ScenePhase)phase
+        camera:(nonnull alloy3d::CameraData *)camera
+         phase:(ScenePhase)phase
 {
   [renderEncoder pushDebugGroup:@"Draw3D"];
-  if(phase!=ScenePhase::Transparent)modelDrawCalls_ = 0;
+  if (phase != ScenePhase::Transparent)
+    modelDrawCalls_ = 0;
 
   if (nbPrimitives_ > 0 || nbPlanes_ > 0 || !drawModelList_.empty() || !drawTextList_.empty())
   {
-    auto uniformBuff = uniformBuffer_[pageIndex_][phase==ScenePhase::Transparent];
+    auto uniformBuff = uniformBuffer_[pageIndex_][phase == ScenePhase::Transparent];
     auto uniform     = (Uniforms *)uniformBuff.contents;
 
     auto mdlview                  = camera->getModelViewMatrix();
@@ -1453,37 +1532,44 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     uniform->lightDirectionAndAmbient = simd_make_float4(viewLight, ambientIntensity_);
     uniform->lightColorAndDiffuse =
         simd_make_float4(lightColor_.x, lightColor_.y, lightColor_.z, diffuseIntensity_);
-    uniform->modelColor = simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
-    uniform->sceneParameters = {sceneDepth_ && phase==ScenePhase::Transparent ? 1.f : 0.f,
-        sceneDepth_ ? 1.f/sceneDepth_.width : 0.f, sceneDepth_ ? 1.f/sceneDepth_.height : 0.f,
-        camera->getProjectionMode()==alloy3d::ProjectionMode::Identity ? 1.f : -1.f};
+    uniform->modelColor      = simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
+    uniform->sceneParameters = {
+        sceneDepth_ && phase == ScenePhase::Transparent ? 1.f : 0.f,
+        sceneDepth_ ? 1.f / sceneDepth_.width : 0.f,
+        sceneDepth_ ? 1.f / sceneDepth_.height : 0.f,
+        camera->getProjectionMode() == alloy3d::ProjectionMode::Identity ? 1.f : -1.f};
     [renderEncoder setFragmentTexture:sceneColor_ ? sceneColor_ : whiteTexture_ atIndex:5];
     [renderEncoder setFragmentTexture:sceneDepth_ ? sceneDepth_ : whiteTexture_ atIndex:6];
-    uniform->shadowTransform = shadowReady_ ? simd_mul(lightViewProjection_, simd_inverse(mdlview))
-                                            : matrix_identity_float4x4;
-    uniform->shadowParameters =
-        simd_make_float4(shadowReady_ ? 1 : 0, shadowSettings_.depthBias, shadowSettings_.filterRadius, 1.f/shadowSettings_.resolution);
+    uniform->shadowTransform  = shadowReady_ ? simd_mul(lightViewProjection_, simd_inverse(mdlview))
+                                             : matrix_identity_float4x4;
+    uniform->shadowParameters = simd_make_float4(shadowReady_ ? 1 : 0,
+                                                 shadowSettings_.depthBias,
+                                                 shadowSettings_.filterRadius,
+                                                 1.f / shadowSettings_.resolution);
     uniform->fogColorAndEnabled = simd_make_float4(fogSettings_.color, float(fogSettings_.enabled));
-    uniform->fogParameters = simd_make_float4(fogSettings_.start, fogInverseRange_, 0, 0);
-    uniform->heightFogColorDensity = simd_make_float4(heightFogSettings_.color,
-        heightFogSettings_.enabled ? heightFogSettings_.density : 0.f);
-    uniform->heightFogParameters = {heightFogSettings_.baseHeight, heightFogSettings_.falloff,
+    uniform->fogParameters      = simd_make_float4(fogSettings_.start, fogInverseRange_, 0, 0);
+    uniform->heightFogColorDensity = simd_make_float4(
+        heightFogSettings_.color, heightFogSettings_.enabled ? heightFogSettings_.density : 0.f);
+    uniform->heightFogParameters = {
+        heightFogSettings_.baseHeight,
+        heightFogSettings_.falloff,
         heightFogSettings_.maxOpacity,
         camera->getProjectionMode() == alloy3d::ProjectionMode::Perspective ? 1.f : 0.f};
     uniform->heightFogWorldUp = {0, 1, 0, 0};
     if (uniform->heightFogColorDensity.w > 0)
     {
-      auto inverseView = simd_inverse(mdlview);
-      uniform->heightFogWorldUp = {inverseView.columns[0].y, inverseView.columns[1].y,
-                                  inverseView.columns[2].y, inverseView.columns[3].y};
+      auto inverseView          = simd_inverse(mdlview);
+      uniform->heightFogWorldUp = {inverseView.columns[0].y,
+                                   inverseView.columns[1].y,
+                                   inverseView.columns[2].y,
+                                   inverseView.columns[3].y};
     }
     uniform->hemisphereSky =
         simd_make_float4(hemisphereSettings_.skyColor * hemisphereSettings_.intensity, 0);
     uniform->hemisphereGround =
         simd_make_float4(hemisphereSettings_.groundColor * hemisphereSettings_.intensity, 0);
     auto viewUp = simd_mul(mdlview, simd_make_float4(hemisphereSettings_.up, 0)).xyz;
-    uniform->hemisphereUpAndEnabled =
-        simd_make_float4(viewUp, float(hemisphereSettings_.enabled));
+    uniform->hemisphereUpAndEnabled = simd_make_float4(viewUp, float(hemisphereSettings_.enabled));
     [renderEncoder setFragmentTexture:shadowReady_ ? shadowMaps_[pageIndex_] : shadowFallback_
                               atIndex:TextureIndexShadow];
     [renderEncoder setDepthStencilState:modelDepth_[0]];
@@ -1524,11 +1610,14 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
       {
         [renderEncoder setFragmentSamplerState:[self modelSampler:dmodel.maxAnisotropy] atIndex:0];
         const bool instanced = dmodel.instanceCount != 0;
-        const bool coverage = part.alphaMode == 1 && dmodel.alphaToCoverage && sampleCount_ > 1 && !blend;
-        const int mode = coverage ? 2 : int(blend);
-        auto       pipeline =
-            dmodel.shader ? dmodel.shader->pipelines[coverage ? (instanced ? 5 : 4) : instanced ? 2 + int(blend) : int(blend)]
-                          : (instanced ? pipelineStateModelInstances_[mode] : pipelineStateModel_[mode]);
+        const bool coverage =
+            part.alphaMode == 1 && dmodel.alphaToCoverage && sampleCount_ > 1 && !blend;
+        const int mode     = coverage ? 2 : int(blend);
+        auto      pipeline = dmodel.shader ? dmodel.shader->pipelines[coverage ? (instanced ? 5 : 4)
+                                                                      : instanced ? 2 + int(blend)
+                                                                                  : int(blend)]
+                                           : (instanced ? pipelineStateModelInstances_[mode]
+                                                        : pipelineStateModel_[mode]);
         [renderEncoder setRenderPipelineState:pipeline];
         if (dmodel.shader)
           [renderEncoder setFragmentBytes:&dmodel.parameters
@@ -1537,22 +1626,33 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
         [renderEncoder setDepthStencilState:modelDepth_[blend]];
         MaterialUniforms material{
             {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)},
-            {dmodel.highlight.strength, dmodel.highlight.shininess,
-             float(camera->getProjectionMode() == alloy3d::ProjectionMode::Perspective), 0},
+            {dmodel.highlight.strength,
+             dmodel.highlight.shininess,
+             float(camera->getProjectionMode() == alloy3d::ProjectionMode::Perspective),
+             0},
             simd_make_float4(dmodel.textureTransform.scale, dmodel.textureTransform.offset)};
         material.normalMapping = {part.normalTexture && dmodel.normalStrength > 0 ? 1.f : 0.f,
-                                  part.normalScale * dmodel.normalStrength, 0, 0};
-        material.surfaceDetail = {dmodel.materialDetail ? 1.f : 0.f, part.roughness,
-                                  part.occlusionStrength,
-                                  float((part.roughnessTexture ? 1 : 0) | (part.occlusionTexture ? 2 : 0))};
-        material.transmission = simd_make_float4(dmodel.transmission.color, dmodel.transmission.strength);
-        material.softDistance = blend ? dmodel.softDistance : 0;
-        material.screenSurface = {blend ? dmodel.screenSpace.refraction : 0.f,dmodel.screenSpace.refractionPixels,
-            blend ? dmodel.screenSpace.reflection : 0.f,dmodel.screenSpace.maxDistance};
+                                  part.normalScale * dmodel.normalStrength,
+                                  0,
+                                  0};
+        material.surfaceDetail = {
+            dmodel.materialDetail ? 1.f : 0.f,
+            part.roughness,
+            part.occlusionStrength,
+            float((part.roughnessTexture ? 1 : 0) | (part.occlusionTexture ? 2 : 0))};
+        material.transmission =
+            simd_make_float4(dmodel.transmission.color, dmodel.transmission.strength);
+        material.softDistance    = blend ? dmodel.softDistance : 0;
+        material.screenSurface   = {blend ? dmodel.screenSpace.refraction : 0.f,
+                                    dmodel.screenSpace.refractionPixels,
+                                    blend ? dmodel.screenSpace.reflection : 0.f,
+                                    dmodel.screenSpace.maxDistance};
         material.screenThickness = dmodel.screenSpace.thickness;
-        material.coverage = dmodel.coverage;
+        material.coverage        = dmodel.coverage;
         SetWindUniforms(material, dmodel);
-        [renderEncoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
+        [renderEncoder setVertexBytes:&material
+                               length:sizeof(material)
+                              atIndex:BufferIndexMaterial];
         [renderEncoder setFragmentBytes:&material
                                  length:sizeof(material)
                                 atIndex:BufferIndexMaterial];
@@ -1583,8 +1683,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                                   atIndex:TextureIndexColor];
         [renderEncoder setFragmentTexture:part.normalTexture ? part.normalTexture : whiteTexture_
                                   atIndex:2];
-        [renderEncoder setFragmentTexture:part.roughnessTexture ? part.roughnessTexture : whiteTexture_ atIndex:3];
-        [renderEncoder setFragmentTexture:part.occlusionTexture ? part.occlusionTexture : whiteTexture_ atIndex:4];
+        [renderEncoder
+            setFragmentTexture:part.roughnessTexture ? part.roughnessTexture : whiteTexture_
+                       atIndex:3];
+        [renderEncoder
+            setFragmentTexture:part.occlusionTexture ? part.occlusionTexture : whiteTexture_
+                       atIndex:4];
         [renderEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                                   indexCount:part.indexCount
                                    indexType:MTLIndexTypeUInt32
@@ -1593,17 +1697,20 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                                instanceCount:instanced ? dmodel.instanceCount : 1];
         ++modelDrawCalls_;
       };
-      size_t usedInstances = instanceUsed_;
+      size_t                   usedInstances = instanceUsed_;
       const alloy3d::Frustum3D frustum(*camera);
-      std::vector<size_t> visible;
+      std::vector<size_t>      visible;
       transparentParts_.clear();
       for (const auto &dmodel : drawModelList_)
       {
-        if(!dmodel.visibility.visible)continue;
+        if (!dmodel.visibility.visible)
+          continue;
         for (ModelPart *part in dmodel.model.parts)
         {
           bool blend = part.alphaMode == 2 || (dmodel.instanceCount == 0 && dmodel.color.w < 1);
-          if ((phase==ScenePhase::Opaque && blend) || (phase==ScenePhase::Transparent && !blend))continue;
+          if ((phase == ScenePhase::Opaque && blend) ||
+              (phase == ScenePhase::Transparent && !blend))
+            continue;
           if (frustumCulling_)
           {
             const auto bounds = WindBounds(part.renderBounds, dmodel.wind);
@@ -1613,23 +1720,29 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
               for (size_t i = 0; i < dmodel.instanceCount; ++i)
               {
                 const auto &source = modelInstances_[dmodel.instanceOffset + i];
-                if (frustum.intersects(bounds, BuildModelMatrix(source.position, source.rotation, source.scale)))
+                if (frustum.intersects(
+                        bounds, BuildModelMatrix(source.position, source.rotation, source.scale)))
                   visible.push_back(dmodel.instanceOffset + i);
               }
-              if (visible.empty()) continue;
+              if (visible.empty())
+                continue;
               if (visible.size() != dmodel.instanceCount)
               {
                 SimpleGuard guard(modelLock_);
-                auto target = instanceBuffers_[pageIndex_].append(device_, usedInstances, visible.size());
-                auto original = static_cast<const ModelInstanceUniforms *>(instanceBuffers_[pageIndex_].buffer().contents);
-                for (size_t i = 0; i < visible.size(); ++i) target[i] = original[visible[i]];
+                auto        target =
+                    instanceBuffers_[pageIndex_].append(device_, usedInstances, visible.size());
+                auto original = static_cast<const ModelInstanceUniforms *>(
+                    instanceBuffers_[pageIndex_].buffer().contents);
+                for (size_t i = 0; i < visible.size(); ++i)
+                  target[i] = original[visible[i]];
                 DrawModel3D culled(dmodel, usedInstances, visible.size());
                 usedInstances += visible.size();
                 drawPart(culled, part, false);
                 continue;
               }
             }
-            else if (!frustum.intersects(bounds, BuildModelMatrix(dmodel.position, dmodel.rotation, dmodel.scale)))
+            else if (!frustum.intersects(
+                         bounds, BuildModelMatrix(dmodel.position, dmodel.rotation, dmodel.scale)))
               continue;
           }
           if (!blend)
@@ -1652,48 +1765,56 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                 transparentParts_.end(),
                 [](const auto &a, const auto &b)
                 { return a.depth == b.depth ? a.order < b.order : a.depth > b.depth; });
-      instanceUsed_ = usedInstances;
+      instanceUsed_     = usedInstances;
       const auto offset = usedInstances;
       if (transparentBatching_ && !transparentParts_.empty())
       {
         SimpleGuard guard(modelLock_);
-        auto instances = instanceBuffers_[pageIndex_].append(device_, offset, transparentParts_.size());
+        auto        instances =
+            instanceBuffers_[pageIndex_].append(device_, offset, transparentParts_.size());
         for (size_t i = 0; i < transparentParts_.size(); ++i)
         {
           const auto &source = *transparentParts_[i].draw;
-          instances[i].modelView = simd_mul(mdlview, BuildModelMatrix(source.position, source.rotation, source.scale));
+          instances[i].modelView =
+              simd_mul(mdlview, BuildModelMatrix(source.position, source.rotation, source.scale));
           instances[i].normalTransform = alloy3d::metal::NormalMatrix(instances[i].modelView);
-          instances[i].color = source.color;
-          instances[i].coverage = source.coverage;
-          instances[i].windPhase = WindPhase(source.position);
+          instances[i].color           = source.color;
+          instances[i].coverage        = source.coverage;
+          instances[i].windPhase       = WindPhase(source.position);
         }
       }
       for (size_t first = 0; first < transparentParts_.size();)
       {
         const auto &part = transparentParts_[first];
-        size_t end = first + 1;
+        size_t      end  = first + 1;
         if (transparentBatching_)
           while (end < transparentParts_.size() && transparentParts_[end].part == part.part &&
-                 part.draw->sameStyle(*transparentParts_[end].draw)) ++end;
+                 part.draw->sameStyle(*transparentParts_[end].draw))
+            ++end;
         if (end - first > 1)
         {
           DrawModel3D batch(*part.draw, offset + first, end - first);
           drawPart(batch, part.part, true);
         }
-        else drawPart(*part.draw, part.part, true);
+        else
+          drawPart(*part.draw, part.part, true);
         first = end;
       }
       transparentParts_.clear();
-      if(phase!=ScenePhase::Opaque){drawModelList_.clear();modelInstances_.clear();}
+      if (phase != ScenePhase::Opaque)
+      {
+        drawModelList_.clear();
+        modelInstances_.clear();
+      }
     }
 
     [renderEncoder setDepthStencilState:modelDepth_[0]];
-    if (phase!=ScenePhase::Opaque && !drawTextList_.empty())
+    if (phase != ScenePhase::Opaque && !drawTextList_.empty())
     {
       if (drawTextList_.size() > device_.maxBufferLength / sizeof(VertexData3D) / 4)
         throw std::length_error("Alloy3D 3D text exceeds device capacity");
       textVertices_[pageIndex_].append(device_, 0, drawTextList_.size() * 4);
-      auto textVtx = textVertices_[pageIndex_].buffer();
+      auto               textVtx  = textVertices_[pageIndex_].buffer();
       __block NSUInteger vtxCount = 0;
       for (auto dtext : drawTextList_)
       {
@@ -1739,12 +1860,13 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   }
 
   [renderEncoder popDebugGroup];
-  if(phase==ScenePhase::Opaque)return;
-  sceneColor_=sceneDepth_=nil;
+  if (phase == ScenePhase::Opaque)
+    return;
+  sceneColor_ = sceneDepth_ = nil;
 
   shadowReady_       = false;
   instancesPrepared_ = false;
-  pageIndex_ = (pageIndex_ + 1) % 3;
+  pageIndex_         = (pageIndex_ + 1) % 3;
 }
 
 // No GPU submission: keep the current page available for the next update.
@@ -1755,8 +1877,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     pageIndex_ = (pageIndex_ + 1) % 3;
   shadowReady_       = false;
   instancesPrepared_ = false;
-  nbPrimitives_ = 0;
-  nbPlanes_ = 0;
+  nbPrimitives_      = 0;
+  nbPlanes_          = 0;
   drawTextList_.clear();
   drawModelList_.clear();
   modelInstances_.clear();
@@ -1765,8 +1887,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 // Called after the host acquires a free frame slot, before adding any draws.
 - (void)beginFrame
 {
-  sceneColor_=sceneDepth_=nil;
-  shadowDrawCalls_ = 0;
+  sceneColor_ = sceneDepth_ = nil;
+  shadowDrawCalls_          = 0;
   if (!shadowSettings_.enabled)
   {
     [shadowMaps_[pageIndex_] release];
@@ -1794,7 +1916,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     std::vector<TransparentPart>{}.swap(transparentParts_);
   [fontRender_ clearRenderCache];
   [textTextureCache_ removeAllObjects];
-  for (auto &pending : releasePending_) pending = true;
+  for (auto &pending : releasePending_)
+    pending = true;
 }
 
 - (alloy3d::RenderMemoryStats)memoryStats
@@ -1802,7 +1925,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   alloy3d::RenderMemoryStats stats;
   for (NSUInteger page = 0; page < 3; ++page)
   {
-    stats.vertexBufferBytes += vertices_[page].bytes() + verticesPlane_[page].bytes() + textVertices_[page].bytes();
+    stats.vertexBufferBytes +=
+        vertices_[page].bytes() + verticesPlane_[page].bytes() + textVertices_[page].bytes();
     stats.instanceBufferBytes += instanceBuffers_[page].bytes();
     stats.releasePending |= releasePending_[page];
     if (shadowMaps_[page])
@@ -1813,9 +1937,9 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     }
   }
   stats.shadowMapBytes += shadowFallback_ ? sizeof(float) : 0;
-  stats.textBitmapCacheBytes = [fontRender_ cacheBytes];
+  stats.textBitmapCacheBytes  = [fontRender_ cacheBytes];
   stats.textTextureCacheBytes = [textTextureCache_ bytes];
-  stats.textCacheEntries = [fontRender_ cacheCount] + [textTextureCache_ count];
+  stats.textCacheEntries      = [fontRender_ cacheCount] + [textTextureCache_ count];
   return stats;
 }
 

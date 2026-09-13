@@ -172,31 +172,45 @@ static void Test(Harness &h, const std::filesystem::path &root)
 }
 static void TestAnisotropy(Harness &h, const std::filesystem::path &root)
 {
-  auto model = h.Load(root / "anisotropic.glb");
+  auto                model = h.Load(root / "anisotropic.glb");
   alloy3d::CameraData camera;
   [h.draw setDirectionalShadow:{}];
   [h.draw setModelTextureTransform:(alloy3d::ModelTextureTransform3D{{.2f, 1}, {0, 0}})];
-  auto submit = [&] {
-    [h.draw drawModel:model position:{0, 0, .5f} rotation:{} scale:{1.5f, .08f, 1} color:{1, 1, 1, 1}];
+  auto submit = [&]
+  {
+    [h.draw drawModel:model
+             position:{0, 0, .5f}
+             rotation:{}
+                scale:{1.5f, .08f, 1}
+                color:{1, 1, 1, 1}];
   };
   [h.draw setModelTextureSampling:{1}];
   auto standard = h.Run(camera, submit);
   [h.draw setModelTextureSampling:{8}];
   auto filtered = h.Run(camera, submit);
-  auto contrast = [](const Pixels &pixels) {
+  auto contrast = [](const Pixels &pixels)
+  {
     double sum = 0;
     for (int y = 125; y < 131; ++y)
       for (int x = 60; x < 196; ++x)
         sum += std::pow(double(pixels[y * 256 + x] & 255) - 127.5, 2);
     return std::sqrt(sum / (6 * 136));
   };
-  std::printf("anisotropic stripes: contrast 1x=%.2f 8x=%.2f\n", contrast(standard), contrast(filtered));
-  Check(contrast(filtered) > contrast(standard) + 15, "anisotropy did not preserve compressed texture detail");
+  std::printf(
+      "anisotropic stripes: contrast 1x=%.2f 8x=%.2f\n", contrast(standard), contrast(filtered));
+  Check(contrast(filtered) > contrast(standard) + 15,
+        "anisotropy did not preserve compressed texture detail");
   for (uint32_t value : {0u, 17u, UINT32_MAX})
   {
     bool rejected = false;
-    try { [h.draw setModelTextureSampling:(alloy3d::ModelTextureSampling3D{value})]; }
-    catch (const std::invalid_argument &) { rejected = true; }
+    try
+    {
+      [h.draw setModelTextureSampling:(alloy3d::ModelTextureSampling3D{value})];
+    }
+    catch (const std::invalid_argument &)
+    {
+      rejected = true;
+    }
     Check(rejected && h.Run(camera, submit) == filtered, "invalid anisotropy changed state");
   }
   // Settings are captured at submission, including across frame pages and custom shaders.
@@ -211,15 +225,18 @@ static void TestAnisotropy(Harness &h, const std::filesystem::path &root)
     Check(h.Read(slot) == filtered, "anisotropy setting was not captured per draw");
   }
   std::string error;
-  auto shader = [h.draw createModelShader:
-      "float3 alloy3dShade(ModelSurface s, float4 p) { return s.litColor; }" diagnostics:error];
+  auto        shader = [h.draw
+      createModelShader:"float3 alloy3dShade(ModelSurface s, float4 p) { return s.litColor; }"
+            diagnostics:error];
   Check(bool(shader), error.c_str());
   [h.draw setModelShader:shader parameters:{}];
   [h.draw setModelTextureSampling:{8}];
   Check(h.Run(camera, submit) == filtered, "custom anisotropy differs");
   Instance instance{{0, 0, .5f}, {}, {1.5f, .08f, 1}, {1, 1, 1, 1}};
-  Check(h.Run(camera, [&] { [h.draw drawModelInstances:model instances:std::span(&instance, 1)]; }) == filtered,
-        "instanced anisotropy differs");
+  Check(
+      h.Run(camera, [&] { [h.draw drawModelInstances:model instances:std::span(&instance, 1)]; }) ==
+          filtered,
+      "instanced anisotropy differs");
   [h.draw setModelShader:{} parameters:{}];
   [h.draw setModelTextureTransform:{}];
   [h.draw setModelTextureSampling:{1}];

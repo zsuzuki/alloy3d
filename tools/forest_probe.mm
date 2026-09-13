@@ -29,14 +29,15 @@ int main(int argc, char **argv)
         return 77;
       {
         const char *samplesEnv = std::getenv("ALLOY3D_FOREST_SAMPLES");
-        NSUInteger samples = samplesEnv ? std::strtoul(samplesEnv, nullptr, 10) : 1;
-        Check(samples == 1 || samples == 2 || samples == 4 || samples == 8, "invalid forest samples");
+        NSUInteger  samples    = samplesEnv ? std::strtoul(samplesEnv, nullptr, 10) : 1;
+        Check(samples == 1 || samples == 2 || samples == 4 || samples == 8,
+              "invalid forest samples");
         Harness h(device, argv[1], 1000, samples, true, true);
         [h.draw setTransparentBatching:true];
         [h.draw setFrustumCulling:true];
         const char *anisotropyEnv = std::getenv("ALLOY3D_FOREST_ANISOTROPY");
-        uint32_t anisotropy = anisotropyEnv ? std::strtoul(anisotropyEnv, nullptr, 10) : 8;
-        [h.draw setModelTextureSampling:(alloy3d::ModelTextureSampling3D{anisotropy,true})];
+        uint32_t    anisotropy    = anisotropyEnv ? std::strtoul(anisotropyEnv, nullptr, 10) : 8;
+        [h.draw setModelTextureSampling:(alloy3d::ModelTextureSampling3D{anisotropy, true})];
         h.clearColor =
             MTLClearColorMake(forest::SkyColor.x, forest::SkyColor.y, forest::SkyColor.z, 1);
         forest::Scene       scene;
@@ -91,11 +92,13 @@ int main(int argc, char **argv)
         bool waterOnly = false, dropsOnly = false;
         auto render = [&](float time)
         {
-          auto post=scene.PostProcessing();
-          if(waterOnly || dropsOnly)post.volumetric.strength=0; // isolated animation probes omit atmospheric scattering
+          auto post = scene.PostProcessing();
+          if (waterOnly || dropsOnly)
+            post.volumetric.strength = 0; // isolated animation probes omit atmospheric scattering
           h.post->set(post);
           [h.draw setHeightFog:scene.HeightFog()];
-          [h.draw setModelNormalMapping:(alloy3d::ModelNormalMapping3D{scene.settings.normalMaps ? 1.f : 0.f})];
+          [h.draw setModelNormalMapping:(alloy3d::ModelNormalMapping3D{
+                                            scene.settings.normalMaps ? 1.f : 0.f})];
           scene.Animate(time, camera.getEyePosition());
           std::array<std::span<const alloy3d::ModelInstance>, forest::Assets.size()> placements;
           scene.Draw([&](size_t asset, auto instances) { placements[asset] = instances; });
@@ -123,14 +126,22 @@ int main(int argc, char **argv)
                         return;
                       if (dropsOnly && asset != forest::Droplet)
                         return;
-                      [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{true,scene.CastShadow(asset)})];
+                      [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{
+                                                     true, scene.CastShadow(asset)})];
                       [h.draw setModelSoftParticles:scene.SoftParticles(asset)];
                       [h.draw setModelScreenSpace:scene.ScreenSpace(asset)];
                       [h.draw setModelWind:scene.Wind(asset)];
                       [h.draw setModelTextureTransform:scene.TextureTransform(asset)];
-                      [h.draw setModelTransmission:(alloy3d::ModelTransmission3D{scene.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
-                                                                                {.75f, 1.f, .4f}})];
-                      [h.draw setModelMaterialDetail:(alloy3d::ModelMaterialDetail3D{scene.settings.materialDetail && (asset == forest::Ground || asset == forest::Rock)})];
+                      [h.draw setModelTransmission:(alloy3d::ModelTransmission3D{
+                                                       scene.settings.transmission &&
+                                                               forest::IsFoliage(asset)
+                                                           ? .45f
+                                                           : 0.f,
+                                                       {.75f, 1.f, .4f}})];
+                      [h.draw setModelMaterialDetail:(alloy3d::ModelMaterialDetail3D{
+                                                         scene.settings.materialDetail &&
+                                                         (asset == forest::Ground ||
+                                                          asset == forest::Rock)})];
                       [h.draw setModelShader:asset == forest::Water     ? water
                                              : asset == forest::Ground  ? ground
                                              : forest::IsFoliage(asset) ? leaf
@@ -142,96 +153,109 @@ int main(int argc, char **argv)
                                                           0})];
                       [h.draw setModelHighlight:(alloy3d::ModelHighlight3D{
                                                     asset == forest::Water    ? .9f
-                                                    : asset == forest::Rock     ? .20f
+                                                    : asset == forest::Rock   ? .20f
                                                     : asset == forest::Ground ? .10f
                                                                               : .035f,
                                                     48})];
                       [h.draw drawModelInstances:models[asset] instances:instances];
                     });
-                if(!waterOnly && !dropsOnly)
+                if (!waterOnly && !dropsOnly)
                 {
                   [h.draw setModelScreenSpace:alloy3d::ModelScreenSpace3D{}];
                   [h.draw setModelSoftParticles:0];
-                  [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{false,true})];
-                  [h.draw setModelShader:{} parameters:{}];[h.draw setModelTextureTransform:alloy3d::ModelTextureTransform3D{}];
-                  scene.DrawShadowProxies([&](size_t asset,auto instances){
-                    [h.draw setModelWind:scene.Wind(asset)];[h.draw drawModelInstances:models[asset] instances:instances];
-                  });
+                  [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{false, true})];
+                  [h.draw setModelShader:{} parameters:{}];
+                  [h.draw setModelTextureTransform:alloy3d::ModelTextureTransform3D{}];
+                  scene.DrawShadowProxies(
+                      [&](size_t asset, auto instances)
+                      {
+                        [h.draw setModelWind:scene.Wind(asset)];
+                        [h.draw drawModelInstances:models[asset] instances:instances];
+                      });
                 }
                 [h.draw setModelVisibility:alloy3d::ModelVisibility3D{}];
               });
         };
         // Float MSAA resolve + tone mapping can straddle an 8-bit rounding boundary.
         // Keep single-sample comparisons exact; allow one LSB in at most 0.01% of MSAA pixels.
-        auto imagesMatch = [&](const Pixels &a,const Pixels &b)
+        auto imagesMatch = [&](const Pixels &a, const Pixels &b)
         {
-          if(a==b)return true;
-          if(samples==1 || a.size()!=b.size())return false;
-          size_t changed=0;
-          for(size_t i=0;i<a.size();++i)if(a[i]!=b[i])
-          {
-            if(++changed>a.size()/10000)return false;
-            for(int c=0;c<4;++c)if(std::abs(int((a[i]>>(c*8))&255)-int((b[i]>>(c*8))&255))>1)return false;
-          }
+          if (a == b)
+            return true;
+          if (samples == 1 || a.size() != b.size())
+            return false;
+          size_t changed = 0;
+          for (size_t i = 0; i < a.size(); ++i)
+            if (a[i] != b[i])
+            {
+              if (++changed > a.size() / 10000)
+                return false;
+              for (int c = 0; c < 4; ++c)
+                if (std::abs(int((a[i] >> (c * 8)) & 255) - int((b[i] >> (c * 8)) & 255)) > 1)
+                  return false;
+            }
           return true;
         };
-        auto first = render(0);
+        auto first               = render(0);
         scene.settings.shadowLod = false;
-        Check(!imagesMatch(first,render(0)), "shadow LOD did not affect forest");
+        Check(!imagesMatch(first, render(0)), "shadow LOD did not affect forest");
         scene.settings.shadowLod = true;
-        Check(imagesMatch(first,render(0)), "shadow LOD toggle did not restore forest");
+        Check(imagesMatch(first, render(0)), "shadow LOD toggle did not restore forest");
         scene.settings.bloom = false;
-        Check(!imagesMatch(first,render(0)), "bloom did not affect forest");
+        Check(!imagesMatch(first, render(0)), "bloom did not affect forest");
         scene.settings.bloom = true;
-        Check(imagesMatch(first,render(0)), "bloom toggle did not restore forest");
+        Check(imagesMatch(first, render(0)), "bloom toggle did not restore forest");
         scene.settings.toneMapping = false;
-        Check(!imagesMatch(first,render(0)), "tone mapping did not affect forest");
+        Check(!imagesMatch(first, render(0)), "tone mapping did not affect forest");
         scene.settings.toneMapping = true;
-        Check(imagesMatch(first,render(0)), "tone mapping toggle did not restore forest");
+        Check(imagesMatch(first, render(0)), "tone mapping toggle did not restore forest");
         auto culledShadows = [h.draw shadowDrawCallCount];
         [h.draw setFrustumCulling:false];
-        Check(imagesMatch(first,render(0)), "frustum culling changed forest pixels");
-        Check(culledShadows == [h.draw shadowDrawCallCount], "culling removed forest shadow casters");
+        Check(imagesMatch(first, render(0)), "frustum culling changed forest pixels");
+        Check(culledShadows == [h.draw shadowDrawCallCount],
+              "culling removed forest shadow casters");
         [h.draw setFrustumCulling:true];
         render(0);
         auto batchedDraws = [h.draw modelDrawCallCount];
         [h.draw setTransparentBatching:false];
-        Check(imagesMatch(first,render(0)), "transparent batching changed forest pixels");
+        Check(imagesMatch(first, render(0)), "transparent batching changed forest pixels");
         auto scalarDraws = [h.draw modelDrawCallCount];
         Check(batchedDraws < scalarDraws, "transparent batching did not reduce forest draws");
-        std::printf("transparent batching: %lu -> %lu model draws\n", (unsigned long)scalarDraws, (unsigned long)batchedDraws);
+        std::printf("transparent batching: %lu -> %lu model draws\n",
+                    (unsigned long)scalarDraws,
+                    (unsigned long)batchedDraws);
         [h.draw setTransparentBatching:true];
         [h.draw setFrustumCulling:true];
         scene.settings.softShadows = false;
         [h.draw setDirectionalShadow:scene.Shadow()];
-        Check(!imagesMatch(first,render(0)), "soft shadow filtering did not affect forest");
+        Check(!imagesMatch(first, render(0)), "soft shadow filtering did not affect forest");
         scene.settings.softShadows = true;
         [h.draw setDirectionalShadow:scene.Shadow()];
-        Check(imagesMatch(first,render(0)), "soft shadow toggle did not restore forest");
+        Check(imagesMatch(first, render(0)), "soft shadow toggle did not restore forest");
         scene.settings.normalMaps = false;
-        auto noNormals = render(0);
-        Check(!imagesMatch(first,noNormals), "forest normal maps did not affect lighting");
+        auto noNormals            = render(0);
+        Check(!imagesMatch(first, noNormals), "forest normal maps did not affect lighting");
         Save(noNormals, h.size, std::string(argv[3]) + "-no-normals.ppm");
         scene.settings.normalMaps = true;
-        Check(imagesMatch(first,render(0)), "normal toggle did not restore forest");
+        Check(imagesMatch(first, render(0)), "normal toggle did not restore forest");
         scene.settings.materialDetail = false;
-        auto noDetail = render(0);
-        Check(!imagesMatch(first,noDetail), "forest material detail did not affect lighting");
+        auto noDetail                 = render(0);
+        Check(!imagesMatch(first, noDetail), "forest material detail did not affect lighting");
         Save(noDetail, h.size, std::string(argv[3]) + "-no-detail.ppm");
         scene.settings.materialDetail = true;
-        Check(imagesMatch(first,render(0)), "material detail toggle did not restore forest");
+        Check(imagesMatch(first, render(0)), "material detail toggle did not restore forest");
         scene.settings.transmission = false;
-        auto noTransmission = render(0);
-        Check(!imagesMatch(first,noTransmission), "forest backlighting did not affect leaves");
+        auto noTransmission         = render(0);
+        Check(!imagesMatch(first, noTransmission), "forest backlighting did not affect leaves");
         Save(noTransmission, h.size, std::string(argv[3]) + "-no-transmission.ppm");
         scene.settings.transmission = true;
-        Check(imagesMatch(first,render(0)), "transmission toggle did not restore forest");
+        Check(imagesMatch(first, render(0)), "transmission toggle did not restore forest");
         scene.settings.heightFog = false;
-        auto noHeightFog = render(0);
-        Check(!imagesMatch(first,noHeightFog), "height fog did not affect forest");
+        auto noHeightFog         = render(0);
+        Check(!imagesMatch(first, noHeightFog), "height fog did not affect forest");
         Save(noHeightFog, h.size, std::string(argv[3]) + "-no-height-fog.ppm");
         scene.settings.heightFog = true;
-        Check(imagesMatch(first,render(0)), "height fog toggle did not restore forest");
+        Check(imagesMatch(first, render(0)), "height fog toggle did not restore forest");
         // Check placed root tips against the terrain, including uneven river banks.
         scene.Draw(
             [&](size_t asset, auto instances)
@@ -260,8 +284,13 @@ int main(int argc, char **argv)
               auto pixel = pixels[y * h.size + x];
               bool clear = true;
               for (int c = 0; c < 3; ++c)
-                clear &= std::abs(int((pixel >> (16 - c * 8)) & 255) -
-                                  int(std::round((forest::SkyColor[c]*(2.51f*forest::SkyColor[c]+.03f))/(forest::SkyColor[c]*(2.43f*forest::SkyColor[c]+.59f)+.14f)*255))) <= 1;
+                clear &=
+                    std::abs(
+                        int((pixel >> (16 - c * 8)) & 255) -
+                        int(std::round(
+                            (forest::SkyColor[c] * (2.51f * forest::SkyColor[c] + .03f)) /
+                            (forest::SkyColor[c] * (2.43f * forest::SkyColor[c] + .59f) + .14f) *
+                            255))) <= 1;
               sky += clear;
               ++total;
             }
@@ -271,8 +300,8 @@ int main(int argc, char **argv)
         Save(first, h.size, std::string(argv[3]) + "-0.ppm");
         auto later = render(2);
         Save(later, h.size, std::string(argv[3]) + "-2.ppm");
-        Check(!imagesMatch(first,later), "forest animation did not change the image");
-        Check(imagesMatch(render(2),later), "same forest time is not deterministic");
+        Check(!imagesMatch(first, later), "forest animation did not change the image");
+        Check(imagesMatch(render(2), later), "same forest time is not deterministic");
         auto detailCounts = [&]
         {
           std::array<float, 4> counts{};
@@ -282,7 +311,8 @@ int main(int argc, char **argv)
                 for (size_t variant = 0; variant < forest::Trunks.size(); ++variant)
                 {
                   float coverage = 0;
-                  for (const auto &instance : instances) coverage += instance.coverage.y-instance.coverage.x;
+                  for (const auto &instance : instances)
+                    coverage += instance.coverage.y - instance.coverage.x;
                   if (forest::IsBillboard(asset) && variant == 0)
                     counts[3] += coverage;
                   if (asset == forest::Trunks[variant])
@@ -302,48 +332,48 @@ int main(int argc, char **argv)
               "missing forest detail levels");
         scene.travel = 8;
         scene.Camera(camera, 1);
-        Check(!imagesMatch(render(2),later), "forest camera did not advance");
+        Check(!imagesMatch(render(2), later), "forest camera did not advance");
         Check(detailCounts() != initialDetail, "tree detail did not follow camera");
         scene.travel = 0;
         scene.Camera(camera, 1);
-        Check(imagesMatch(render(2),later), "returning camera changed forest layout or wind");
+        Check(imagesMatch(render(2), later), "returning camera changed forest layout or wind");
         std::printf("trees=%.0f near=%.1f middle=%.1f billboards=%.1f\n",
                     initialDetail[0],
                     initialDetail[1],
                     initialDetail[2],
                     initialDetail[3]);
         scene.settings.billboards = false;
-        Check(!imagesMatch(render(2),later), "billboard toggle has no visible effect");
+        Check(!imagesMatch(render(2), later), "billboard toggle has no visible effect");
         Check(detailCounts()[3] == 0, "billboard toggle left sprites active");
         scene.settings.billboards = true;
-        Check(imagesMatch(render(2),later), "billboard toggle changed layout or animation");
+        Check(imagesMatch(render(2), later), "billboard toggle changed layout or animation");
         scene.yaw = .6f;
         scene.Camera(camera, 1);
         auto turned = render(2);
         checkForestHorizon(turned);
         Save(turned, h.size, std::string(argv[3]) + "-turned.ppm");
         detailCounts();
-        Check(!imagesMatch(turned,later), "billboard camera turn has no visible effect");
+        Check(!imagesMatch(turned, later), "billboard camera turn has no visible effect");
         scene.yaw = 0;
         scene.Camera(camera, 1);
-        Check(imagesMatch(render(2),later), "camera turn changed billboard view selection");
+        Check(imagesMatch(render(2), later), "camera turn changed billboard view selection");
         scene.settings.wind = false;
         auto noWind         = render(2);
-        Check(!imagesMatch(noWind,later), "wind toggle has no visible effect");
+        Check(!imagesMatch(noWind, later), "wind toggle has no visible effect");
         scene.settings.wind   = true;
         scene.settings.shafts = false;
         auto noShafts         = render(2);
         Save(noShafts, h.size, std::string(argv[3]) + "-no-shafts.ppm");
-        Check(!imagesMatch(noShafts,later), "sunlight toggle has no visible effect");
+        Check(!imagesMatch(noShafts, later), "sunlight toggle has no visible effect");
         scene.settings.shafts = true;
         scene.settings.fog    = false;
         [h.draw setFog:scene.Fog()];
-        Check(!imagesMatch(render(2),later), "fog toggle has no visible effect");
+        Check(!imagesMatch(render(2), later), "fog toggle has no visible effect");
         scene.settings.fog = true;
         [h.draw setFog:scene.Fog()];
         scene.settings.shadows = false;
         [h.draw setDirectionalShadow:scene.Shadow()];
-        Check(!imagesMatch(render(2),later), "shadow toggle has no visible effect");
+        Check(!imagesMatch(render(2), later), "shadow toggle has no visible effect");
         scene.settings.shadows = true;
         [h.draw setDirectionalShadow:scene.Shadow()];
         waterOnly = true;
@@ -352,30 +382,30 @@ int main(int argc, char **argv)
                               {0, 1, 0});
         auto waterStart = render(2);
         auto waterLater = render(3);
-        Check(!imagesMatch(waterStart,waterLater), "water flow has no visible effect");
+        Check(!imagesMatch(waterStart, waterLater), "water flow has no visible effect");
         scene.settings.flow = false;
-        Check(imagesMatch(render(4),waterLater), "stopped water keeps moving");
+        Check(imagesMatch(render(4), waterLater), "stopped water keeps moving");
         scene.settings.flow = true;
-        Check(!imagesMatch(render(5),waterLater), "water flow did not resume");
+        Check(!imagesMatch(render(5), waterLater), "water flow did not resume");
         waterOnly = false;
         Save(render(2), h.size, std::string(argv[3]) + "-water-detail.ppm");
         dropsOnly      = true;
         auto dropStart = render(2);
         auto dropLater = render(2.15f);
-        Check(!imagesMatch(dropStart,dropLater), "droplets do not hop");
-        Check(imagesMatch(render(2.15f),dropLater), "paused droplets are not deterministic");
+        Check(!imagesMatch(dropStart, dropLater), "droplets do not hop");
+        Check(imagesMatch(render(2.15f), dropLater), "paused droplets are not deterministic");
         scene.settings.flow = false;
-        Check(imagesMatch(render(2.3f),dropLater), "droplets keep moving with stopped stream");
+        Check(imagesMatch(render(2.3f), dropLater), "droplets keep moving with stopped stream");
         scene.settings.flow = true;
-        Check(!imagesMatch(render(2.45f),dropLater), "droplets did not resume");
+        Check(!imagesMatch(render(2.45f), dropLater), "droplets did not resume");
         auto dropsOn          = render(2.45f);
         scene.settings.shafts = false;
-        Check(imagesMatch(render(2.45f),dropsOn), "sunlight toggle hides stream droplets");
+        Check(imagesMatch(render(2.45f), dropsOn), "sunlight toggle hides stream droplets");
         scene.settings.shafts   = true;
         scene.settings.droplets = false;
-        Check(!imagesMatch(render(2.45f),dropsOn), "droplet toggle has no visible effect");
+        Check(!imagesMatch(render(2.45f), dropsOn), "droplet toggle has no visible effect");
         scene.settings.droplets = true;
-        Check(imagesMatch(render(2.45f),dropsOn), "droplet toggle changes particle timing");
+        Check(imagesMatch(render(2.45f), dropsOn), "droplet toggle changes particle timing");
         dropsOnly              = false;
         size_t maxDrops        = 0;
         size_t highDropSamples = 0, dropSamples = 0;

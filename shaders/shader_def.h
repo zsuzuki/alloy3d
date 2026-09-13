@@ -35,7 +35,7 @@ typedef NS_ENUM(EnumBackingType, VertexAttribute) {
 };
 
 typedef NS_ENUM(EnumBackingType, TextureIndex) {
-  TextureIndexColor = 0,
+  TextureIndexColor  = 0,
   TextureIndexShadow = 1,
 };
 
@@ -53,27 +53,27 @@ typedef struct
   simd_float4     fogParameters; // start, 1/(end-start), reserved, reserved
   simd_float4     heightFogColorDensity;
   simd_float4     heightFogParameters; // base height, falloff, max opacity, perspective
-  simd_float4     heightFogWorldUp; // view-space world up, camera world height
-  simd_float4     hemisphereSky; // RGB scaled by intensity
+  simd_float4     heightFogWorldUp;    // view-space world up, camera world height
+  simd_float4     hemisphereSky;       // RGB scaled by intensity
   simd_float4     hemisphereGround;
   simd_float4     hemisphereUpAndEnabled; // view-space up, enabled
-  simd_float4 sceneParameters; // snapshot ready, inverse size, view-depth sign
+  simd_float4     sceneParameters;        // snapshot ready, inverse size, view-depth sign
 } Uniforms;
 
 struct MaterialUniforms
 {
   // alphaMode (OPAQUE=0, MASK=1, BLEND=2), cutoff, doubleSided, unlit.
   simd_float4 parameters;
-  simd_float4 highlight; // strength, shininess, perspective camera, reserved
+  simd_float4 highlight;        // strength, shininess, perspective camera, reserved
   simd_float4 textureTransform; // UV scale.xy, offset.zw (identity: 1,1,0,0)
-  simd_float4 normalMapping; // enabled, scale, reserved, reserved
-  simd_float4 surfaceDetail; // enabled, roughness factor, AO strength, texture flags
-  simd_float4 transmission; // RGB tint, strength
-  simd_float4 screenSurface; // refraction, pixel offset, reflection, ray distance
-  float screenThickness;
-  float softDistance;
-  simd_float2 coverage; // dither interval
-  simd_float4 wind; // direction XZ, strength, time * frequency
+  simd_float4 normalMapping;    // enabled, scale, reserved, reserved
+  simd_float4 surfaceDetail;    // enabled, roughness factor, AO strength, texture flags
+  simd_float4 transmission;     // RGB tint, strength
+  simd_float4 screenSurface;    // refraction, pixel offset, reflection, ray distance
+  float       screenThickness;
+  float       softDistance;
+  simd_float2 coverage;  // dither interval
+  simd_float4 wind;      // direction XZ, strength, time * frequency
   simd_float4 windShape; // base height, inverse height range, placement phase, reserved
 };
 
@@ -83,7 +83,7 @@ struct ModelInstanceUniforms
   matrix_float3x3 normalTransform;
   simd_float4     color;
   simd_float2     coverage;
-  float          windPhase;
+  float           windPhase;
 };
 
 typedef struct

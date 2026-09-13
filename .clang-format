@@ -5,3 +5,5 @@ AlignConsecutiveAssignments: true
 BinPackArguments: false
 UseTab: Never
 ColumnLimit: 100
+# Metal helpers depend on shared shader declarations being included first.
+SortIncludes: Never

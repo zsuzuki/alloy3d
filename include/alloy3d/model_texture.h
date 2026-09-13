@@ -1,6 +1,6 @@
 #pragma once
-#include <simd/vector_types.h>
 #include <cstdint>
+#include <simd/vector_types.h>
 
 namespace alloy3d
 {

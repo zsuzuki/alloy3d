@@ -6,7 +6,7 @@ namespace alloy3d
 // Select color visibility and shadow casting independently (per draw).
 struct ModelVisibility3D
 {
-  bool visible = true;
+  bool visible    = true;
   bool castShadow = true;
 };
 

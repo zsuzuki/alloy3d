@@ -2,8 +2,8 @@
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
 #import "app_delegate.h"
-#import "renderer.h"
 #include "render_options.h"
+#import "renderer.h"
 #import <AppKit/AppKit.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <MetalKit/MetalKit.h>
@@ -58,8 +58,9 @@
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender
 {
-  if ([[sender draggingPasteboard] canReadObjectForClasses:@[ [NSURL class] ]
-                                                   options:@{ NSPasteboardURLReadingFileURLsOnlyKey: @YES }])
+  if ([[sender draggingPasteboard]
+          canReadObjectForClasses:@[ [NSURL class] ]
+                          options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}])
   {
     return NSDragOperationCopy;
   }
@@ -73,9 +74,10 @@
     return NO;
   }
 
-  NSPasteboard *pb = [sender draggingPasteboard];
-  NSArray<NSURL *> *urls = [pb readObjectsForClasses:@[ [NSURL class] ]
-                                             options:@{ NSPasteboardURLReadingFileURLsOnlyKey: @YES }];
+  NSPasteboard     *pb = [sender draggingPasteboard];
+  NSArray<NSURL *> *urls =
+      [pb readObjectsForClasses:@[ [NSURL class] ]
+                        options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}];
   if (urls.count == 0)
   {
     return NO;
@@ -226,18 +228,18 @@ NSMenu *createMenu();
   auto style = NSWindowStyleMaskClosable | (resize ? NSWindowStyleMaskResizable : 0) |
                (border ? NSWindowStyleMaskTitled : NSWindowStyleMaskBorderless);
 
-  window_                       = [[BorderlessWindow alloc] initWithContentRect:frame
-                                                styleMask:style
-                                                  backing:NSBackingStoreBuffered
-                                                    defer:false];
-  device_                       = MTLCreateSystemDefaultDevice();
-  view_                         = [[MTKView alloc] initWithFrame:frame device:device_];
-  view_.colorPixelFormat        = MTLPixelFormatRGBA8Unorm_sRGB;
-  view_.clearColor              = MTLClearColorMake(clearRed, clearGreen, clearBlue, clearAlpha);
+  window_                = [[BorderlessWindow alloc] initWithContentRect:frame
+                                                               styleMask:style
+                                                                 backing:NSBackingStoreBuffered
+                                                                   defer:false];
+  device_                = MTLCreateSystemDefaultDevice();
+  view_                  = [[MTKView alloc] initWithFrame:frame device:device_];
+  view_.colorPixelFormat = MTLPixelFormatRGBA8Unorm_sRGB;
+  view_.clearColor       = MTLClearColorMake(clearRed, clearGreen, clearBlue, clearAlpha);
   view_.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
   view_.clearDepth              = 1.0f;
-  const auto renderOptions = appLoop_->GetRenderOptions();
-  view_.sampleCount = alloy3d::internal::SelectSampleCount(
+  const auto renderOptions      = appLoop_->GetRenderOptions();
+  view_.sampleCount             = alloy3d::internal::SelectSampleCount(
       renderOptions.sampleCount,
       [&](uint32_t count) { return [device_ supportsTextureSampleCount:count]; });
 

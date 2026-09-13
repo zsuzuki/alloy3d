@@ -58,31 +58,45 @@ static void Test(Harness &h, const std::filesystem::path &root)
   Check(std::abs(Red(At(noShadow, 1.5, 1.5)) - Red(At(withShadow, 1.5, 1.5))) <= 2,
         "unshadowed floor changed or self-shadow acne");
   Check([h.draw shadowDrawCallCount] == 2, "primitive and model shadow draw count incorrect");
-  auto softSettings=shadow;softSettings.filterRadius=2;
+  auto softSettings         = shadow;
+  softSettings.filterRadius = 2;
   [h.draw setDirectionalShadow:softSettings];
-  auto soft=h.Run(camera,[&]{scene(caster);});
-  Check(soft!=withShadow,"PCF filter did not change shadow edges");
-  size_t hardEdges=0,softEdges=0;
-  for(int y=102;y<154;++y)for(int x=145;x<188;++x)
-  {
-    int a=Red(withShadow[y*256+x]),b=Red(soft[y*256+x]);
-    hardEdges += a>60 && a<185;softEdges += b>60 && b<185;
-  }
-  Check(softEdges>hardEdges,"PCF did not broaden shadow transition");
-  Check(std::abs(Red(At(soft,.5))-Red(At(withShadow,.5)))<=2,"PCF lightened shadow interior");
+  auto soft = h.Run(camera, [&] { scene(caster); });
+  Check(soft != withShadow, "PCF filter did not change shadow edges");
+  size_t hardEdges = 0, softEdges = 0;
+  for (int y = 102; y < 154; ++y)
+    for (int x = 145; x < 188; ++x)
+    {
+      int a = Red(withShadow[y * 256 + x]), b = Red(soft[y * 256 + x]);
+      hardEdges += a > 60 && a < 185;
+      softEdges += b > 60 && b < 185;
+    }
+  Check(softEdges > hardEdges, "PCF did not broaden shadow transition");
+  Check(std::abs(Red(At(soft, .5)) - Red(At(withShadow, .5))) <= 2,
+        "PCF lightened shadow interior");
   [h.draw setDirectionalShadow:shadow];
-  Check(withShadow==h.Run(camera,[&]{scene(caster);}),"disabling PCF did not restore baseline");
+  Check(withShadow == h.Run(camera, [&] { scene(caster); }),
+        "disabling PCF did not restore baseline");
 
-  auto shadowOnly=h.Run(camera,[&]{
-    Quad(h.draw,0,0);[h.draw setModelVisibility:(alloy3d::ModelVisibility3D{false,true})];
-    Model(h.draw,caster);[h.draw setModelVisibility:alloy3d::ModelVisibility3D{}];
-  });
-  Check([h.draw modelDrawCallCount]==0 && Red(At(shadowOnly,.5))<60,"hidden proxy did not cast a shadow");
-  auto noCast=h.Run(camera,[&]{
-    Quad(h.draw,0,0);[h.draw setModelVisibility:(alloy3d::ModelVisibility3D{true,false})];
-    Model(h.draw,caster);[h.draw setModelVisibility:alloy3d::ModelVisibility3D{}];
-  });
-  Check(noCast==noShadow,"visible noncaster changed color or cast shadow");
+  auto shadowOnly = h.Run(camera,
+                          [&]
+                          {
+                            Quad(h.draw, 0, 0);
+                            [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{false, true})];
+                            Model(h.draw, caster);
+                            [h.draw setModelVisibility:alloy3d::ModelVisibility3D{}];
+                          });
+  Check([h.draw modelDrawCallCount] == 0 && Red(At(shadowOnly, .5)) < 60,
+        "hidden proxy did not cast a shadow");
+  auto noCast = h.Run(camera,
+                      [&]
+                      {
+                        Quad(h.draw, 0, 0);
+                        [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{true, false})];
+                        Model(h.draw, caster);
+                        [h.draw setModelVisibility:alloy3d::ModelVisibility3D{}];
+                      });
+  Check(noCast == noShadow, "visible noncaster changed color or cast shadow");
   auto primitive = h.Run(camera,
                          [&]
                          {
@@ -306,16 +320,29 @@ int main(int argc, char **argv)
     {
       Check(argc == 3 || (argc == 4 && std::string_view(argv[3]) == "--custom-surface"),
             "usage: shadow_regression shaders.metallib material-fixtures");
-      alloy3d::DirectionalShadow3D stable;stable.resolution=512;stable.stabilize=true;
-      auto original=alloy3d::BuildDirectionalShadowCamera3D(stable,{0,0,-1});
-      stable.bounds.min.x+=.0001f;stable.bounds.max.x+=.0001f;
-      auto shifted=alloy3d::BuildDirectionalShadowCamera3D(stable,{0,0,-1});
-      auto a=simd_mul(original.getProjectionMatrix(),original.getModelViewMatrix());
-      auto b=simd_mul(shifted.getProjectionMatrix(),shifted.getModelViewMatrix());
-      for(int col=0;col<4;++col)Check(simd_all(simd_abs(a.columns[col]-b.columns[col])<1e-6f),"subtexel motion changed stabilized shadow");
-      stable.filterRadius=NAN;bool rejected=false;
-      try{alloy3d::BuildDirectionalShadowCamera3D(stable,{0,0,-1});}catch(const std::invalid_argument &){rejected=true;}
-      Check(rejected,"invalid PCF radius accepted");
+      alloy3d::DirectionalShadow3D stable;
+      stable.resolution = 512;
+      stable.stabilize  = true;
+      auto original     = alloy3d::BuildDirectionalShadowCamera3D(stable, {0, 0, -1});
+      stable.bounds.min.x += .0001f;
+      stable.bounds.max.x += .0001f;
+      auto shifted = alloy3d::BuildDirectionalShadowCamera3D(stable, {0, 0, -1});
+      auto a       = simd_mul(original.getProjectionMatrix(), original.getModelViewMatrix());
+      auto b       = simd_mul(shifted.getProjectionMatrix(), shifted.getModelViewMatrix());
+      for (int col = 0; col < 4; ++col)
+        Check(simd_all(simd_abs(a.columns[col] - b.columns[col]) < 1e-6f),
+              "subtexel motion changed stabilized shadow");
+      stable.filterRadius = NAN;
+      bool rejected       = false;
+      try
+      {
+        alloy3d::BuildDirectionalShadowCamera3D(stable, {0, 0, -1});
+      }
+      catch (const std::invalid_argument &)
+      {
+        rejected = true;
+      }
+      Check(rejected, "invalid PCF radius accepted");
       auto device = MTLCreateSystemDefaultDevice();
       if (!device)
         return 77;
