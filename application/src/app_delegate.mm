@@ -132,7 +132,13 @@
 
 //
 // 枠の無いウィンドウでもキー入力を受け付けるようにする
+// Begin third-party portion: BorderlessWindow (CC-BY-SA-3.0).
+// Adapted from user1467310's answer to "keyDown not being called" (2012):
 // https://stackoverflow.com/a/11638926
+// Author: https://stackoverflow.com/users/1467310/user1467310
+// License: https://creativecommons.org/licenses/by-sa/3.0/
+// Changes: removed the empty instance-variable block and adjusted formatting.
+// This adapted portion remains under CC-BY-SA-3.0; see THIRD_PARTY_NOTICES.md.
 //
 @interface BorderlessWindow : NSWindow
 @end
@@ -150,6 +156,8 @@
 }
 
 @end
+
+// End third-party BorderlessWindow portion.
 
 //
 // AppDelegate

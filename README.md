@@ -9,6 +9,14 @@ or Unreal Engine.
 Alloy3D was split out from the earlier `metaltest` rendering test repository.
 `samples/viewer/main.cpp` is a sample viewer, not the library entry point.
 
+## License
+
+Alloy3D's original code and sample assets are provided under the [MIT License](LICENSE),
+to the extent the maintainers hold applicable rights. Third-party portions retain their
+own licenses: see [third-party notices](THIRD_PARTY_NOTICES.md), including the
+CC BY-SA 3.0 `BorderlessWindow` portion and the CC0 ACES curve.
+The forest includes AI-generated color textures with [recorded provenance](assets/samples/forest/textures/README.md).
+
 日本語ドキュメント:
 
 - [ビルドと利用方法](docs/build-ja.md)

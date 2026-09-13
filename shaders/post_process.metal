@@ -47,6 +47,9 @@ fragment half4 toneMapFragment(PostVertex in [[stage_in]], texture2d<half> hdr [
   if (parameters.y == 1)
     color = color / (1 + color);
   if (parameters.y == 2)
+    // Krzysztof Narkowicz, "ACES Filmic Tone Mapping Curve" (2016), CC0-1.0.
+    // https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+    // Coefficients inlined into the Metal expression; see THIRD_PARTY_NOTICES.md.
     color = saturate((color * (2.51f * color + .03f)) / (color * (2.43f * color + .59f) + .14f));
   return half4(half3(color), sample.a);
 }

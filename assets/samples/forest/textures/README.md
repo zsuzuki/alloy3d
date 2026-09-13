@@ -1,5 +1,9 @@
 # Forest textures
 
+These files are included in the forest sample's [asset license](../README.md).
+The original generated PNGs retain their C2PA provenance metadata. This records the
+generation source; it is not a claim of endorsement or a third-party rights clearance.
+
 The `*_normal.png` files are linear tangent-space data generated independently by
 `tools/generate_surface_maps.py` from periodic height functions. They are not image-generation
 outputs or normal maps baked from the color images. Regenerate/check with that script and `--check`.
@@ -10,7 +14,10 @@ These three original surface images were generated for this sample using the bui
 - `bark.png`: vertical cedar bark; wrapped around trunks, branches, and roots.
 - `moss_rock.png`: moss patches and weathered stone; wrapped around boulders.
 
-These are base-color maps only. Scene lighting supplies directional illumination and shadows. The mesh generator embeds these checked-in PNGs in the GLBs with repeating, mipmapped sampling. No normal, roughness, or displacement maps are supplied.
+These three images are base-color maps. Scene lighting supplies directional illumination and shadows.
+The mesh generator embeds these checked-in PNGs in the GLBs with repeating, mipmapped sampling.
+The separate `*_normal.png` and `*_surface.png` maps are generated procedurally by
+`tools/generate_surface_maps.py`; the latter encode roughness and ambient occlusion.
 
 The stream additionally uses `water_surface.png`, generated with the built-in image generation tool.
 It includes illustrated water glints and is used as a flowing surface-color and luminance-detail map.
