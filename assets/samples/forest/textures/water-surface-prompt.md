@@ -1,0 +1,7 @@
+# Flowing water surface
+
+`water_surface.png` is the unmodified output of the built-in OpenAI image generation tool, generated for the forest sample on 2026-09-13. The GLB embeds the PNG and the sample scrolls it downstream. Its color and luminance contribute to the water shading; it is an illustrated surface texture with baked glints, not a simulation or a physical normal map.
+
+## Final generation prompt
+
+Use case: photorealistic-natural. Asset type: seamless square repeating water surface color texture for a real-time 3D forest stream. Primary request: orthographic straight-down view of gentle shallow flowing water, covering about 2 metres square. Only continuous water surface fills the whole frame; no banks, no rocks, no leaves, no river bed, no landscape or horizon. Soft broken ripples, irregular fine interlocking wavelets, sinuous elongated ribbons following flow vertically from top to bottom, small delicate pale highlights and subtle dark troughs; gentle creek, not ocean waves, not foam. Natural subdued blue-green with dark olive undertones and muted silver-green glints. Medium-low contrast, no solid white patches. Even detail and even brightness across image; no central composition, no vignette, no spotlight. Seamlessly tileable on all four edges. Rich realistic small-scale water detail with organic variation, no repetitive geometric pattern. No text, no border, no watermark. Single full-frame texture, not a material ball, not a montage. Square 1024x1024.

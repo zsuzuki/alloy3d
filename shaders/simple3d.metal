@@ -101,10 +101,13 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   SkinVertex(vd, jointMatrices, position, normal, orientation);
   o.position   = cameraData.perspectiveTransform * cameraData.worldTransform * position;
   o.viewDepth  = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * position).z : 0;
+  // Custom surfaces need view position even with highlights disabled or unlit materials.
+#ifndef ALLOY3D_CUSTOM_SURFACE
   if (material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0)
+#endif
     o.viewPosition = (cameraData.worldTransform * position).xyz;
   o.normal     = UnitModelNormal(cameraData.worldNormalTransform * normal);
-  o.texcoord   = vd.texcoord;
+  o.texcoord   = vd.texcoord * material.textureTransform.xy + material.textureTransform.zw;
   o.color      = vd.color;
   o.modelColor = cameraData.modelColor;
   o.shadowPosition = cameraData.shadowTransform * cameraData.worldTransform * position;
@@ -131,10 +134,13 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   SkinVertex(vd, jointMatrices, position, normal, orientation);
   o.position   = cameraData.perspectiveTransform * instance.modelView * position;
   o.viewDepth  = cameraData.fogColorAndEnabled.w != 0 ? -(instance.modelView * position).z : 0;
+  // Custom surfaces need view position even with highlights disabled or unlit materials.
+#ifndef ALLOY3D_CUSTOM_SURFACE
   if (material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0)
+#endif
     o.viewPosition = (instance.modelView * position).xyz;
   o.normal     = UnitModelNormal(instance.normalTransform * normal);
-  o.texcoord   = vd.texcoord;
+  o.texcoord   = vd.texcoord * material.textureTransform.xy + material.textureTransform.zw;
   o.color      = vd.color;
   o.modelColor = instance.color;
   o.shadowPosition = cameraData.shadowTransform * instance.modelView * position;
@@ -231,7 +237,11 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                        float(shadow),
                        unlit,
                        float3(ambientColor),
-                       float3(specularColor)};
+                       float3(specularColor),
+                       in.viewPosition,
+                       material.highlight.z != 0 ? UnitModelNormal(-in.viewPosition) : float3(0, 0, 1),
+                       l,
+                       saturate(cameraData.lightColorAndDiffuse.w)};
   litColor = half3(alloy3dShade(surface, parameters));
 #endif
   return ApplyFog(half4(litColor, baseColor.a), in.viewDepth, cameraData);

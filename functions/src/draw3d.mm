@@ -57,6 +57,7 @@ struct DrawModel3D
   std::shared_ptr<MetalModelShader> shader;
   simd_float4                       parameters{};
   alloy3d::ModelHighlight3D         highlight;
+  alloy3d::ModelTextureTransform3D textureTransform;
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -72,7 +73,8 @@ struct DrawModel3D
   DrawModel3D(DrawModel3D &&other) noexcept
       : model(std::exchange(other.model, nil)), position(other.position), rotation(other.rotation),
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
-        parameters(other.parameters), highlight(other.highlight), instanceOffset(other.instanceOffset),
+        parameters(other.parameters), highlight(other.highlight),
+        textureTransform(other.textureTransform), instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
   }
@@ -194,6 +196,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   std::shared_ptr<MetalModelShader> modelShader_;
   simd_float4                       shaderParameters_;
   alloy3d::ModelHighlight3D         modelHighlight_;
+  alloy3d::ModelTextureTransform3D modelTextureTransform_;
 
   SimpleLock primLock_;
   SimpleLock planeLock_;
@@ -387,6 +390,14 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   modelShader_      = std::move(concrete);
   shaderParameters_ = parameters;
   return true;
+}
+
+- (void)setModelTextureTransform:(const alloy3d::ModelTextureTransform3D &)transform
+{
+  if (!std::isfinite(transform.scale.x) || !std::isfinite(transform.scale.y) ||
+      !std::isfinite(transform.offset.x) || !std::isfinite(transform.offset.y))
+    throw std::invalid_argument("Alloy3D model texture scale and offset must be finite");
+  modelTextureTransform_ = transform;
 }
 
 - (void)setModelHighlight:(const alloy3d::ModelHighlight3D &)highlight
@@ -1069,7 +1080,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       if (part.alphaMode == 2)
         continue;
       MaterialUniforms material{
-          {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)}};
+          {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)},
+          {}, simd_make_float4(draw.textureTransform.scale, draw.textureTransform.offset)};
       [encoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
       [encoder setFragmentBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
       [encoder setVertexBuffer:[part vertexBufferForPage:pageIndex_] offset:0 atIndex:0];
@@ -1108,6 +1120,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   drawModelList_.back().shader     = modelShader_;
   drawModelList_.back().parameters = shaderParameters_;
   drawModelList_.back().highlight = modelHighlight_;
+  drawModelList_.back().textureTransform = modelTextureTransform_;
 }
 
 - (void)drawModelInstances:(MetalModel *)model
@@ -1135,6 +1148,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       drawModelList_.back().shader     = modelShader_;
       drawModelList_.back().parameters = shaderParameters_;
       drawModelList_.back().highlight = modelHighlight_;
+      drawModelList_.back().textureTransform = modelTextureTransform_;
     }
     return;
   }
@@ -1146,6 +1160,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     drawModelList_.back().shader     = modelShader_;
     drawModelList_.back().parameters = shaderParameters_;
     drawModelList_.back().highlight = modelHighlight_;
+    drawModelList_.back().textureTransform = modelTextureTransform_;
   }
   catch (...)
   {
@@ -1245,7 +1260,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
         MaterialUniforms material{
             {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)},
             {dmodel.highlight.strength, dmodel.highlight.shininess,
-             float(camera->getProjectionMode() == alloy3d::ProjectionMode::Perspective), 0}};
+             float(camera->getProjectionMode() == alloy3d::ProjectionMode::Perspective), 0},
+            simd_make_float4(dmodel.textureTransform.scale, dmodel.textureTransform.offset)};
         [renderEncoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
         [renderEncoder setFragmentBytes:&material
                                  length:sizeof(material)

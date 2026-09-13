@@ -288,6 +288,12 @@ public:
     return true;
   }
 
+  bool SetModelTextureTransform3D(const alloy3d::ModelTextureTransform3D &transform) override
+  {
+    [draw3d_ setModelTextureTransform:transform];
+    return true;
+  }
+
   void SetDirectionalLight3D(const alloy3d::DirectionalLight3D &light) override
   {
     [draw3d_ setDirectionalLight:light];

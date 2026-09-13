@@ -58,13 +58,17 @@ falseを返し、以前の設定を維持します。モデルのアニメーシ
 | `baseColor` | `float3` | 素材・頂点色、テクスチャ、配置色を乗算したRGB |
 | `litColor` | `float3` | 標準描画のRGB。ライティング、影、Unlitを反映済み |
 | `normal` | `float3` | ビュー座標の単位法線。裏面は反転し、法線がなければゼロ |
-| `texcoord` | `float2` | 補間されたTEXCOORD_0 |
+| `texcoord` | `float2` | UV変換後のTEXCOORD_0。テクスチャのサンプリング座標と同じ |
 | `lightColor` | `float3` | 平行光源のRGB |
 | `ambient` | `float` | 従来の平行光設定のambient値（互換用） |
 | `ambientColor` | `float3` | 空・地面の環境光を反映した有効な環境光RGB |
 | `specularColor` | `float3` | 簡易ハイライトのRGB。無効時は0。litColorに加算済み |
 | `diffuse` | `float` | max(N・L, 0) × 拡散光強度。影を掛ける前の値 |
 | `shadow` | `float` | 影の可視率。0で影、1で明部。影OFF・範囲外・Unlitでは1 |
+| `viewPosition` | `float3` | スキニング・配置後のビュー座標。Unlit・ハイライトOFFでも有効 |
+| `viewDirection` | `float3` | 表面から視点へ向かう単位ベクトル。正射影・Identity投影は `(0,0,1)` |
+| `lightDirection` | `float3` | 表面から平行光源へ向かうビュー座標の単位ベクトル |
+| `lightIntensity` | `float` | 平行光源の拡散光強度 `[0,1]` |
 | `unlit` | `bool` | Unlit素材、または利用できる法線がない場合にtrue |
 
 標準描画と同じ出力にする最小関数は `return s.litColor;` です。
@@ -98,6 +102,15 @@ Metal関数はRGB計算のみを行い、有限の値を返す形で記述して
 
 この段階ではモデルの表面RGBが対象です。カスタム頂点処理、追加テクスチャ、
 複数光源、ポストエフェクト、PBRマテリアル全体の差し替えは提供していません。
+
+## 流れる模様と水面
+
+[モデルのUV変換](model-texture-ja.md)でテクスチャのサンプリング位置を動かせます。
+`ModelSurface::texcoord` にも変換後の座標が渡るので、同じ向きに流れる細波や模様を計算できます。
+`viewPosition` と `texcoord` の `dfdx` / `dfdy` から接線方向を求め、波の傾きをビュー座標の法線に反映できます。
+その法線と `viewDirection`、`lightDirection` でフレネル風の反射量やハイライトを計算します。
+これらは表面RGBの計算用入力です。法線を書き換えて標準照明を再実行するAPIではありません。
+森林の実例は `samples/forest/scene.h` の `WaterShader` にあります。
 
 ## 動作確認
 

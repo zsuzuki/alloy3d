@@ -1,0 +1,36 @@
+{
+  "sources": {
+    "crown.glb": "1e2c50b1c5ae3620a130795a205132f08e0fd5539a3c4fdf557b4472d8a7ccc9",
+    "leaves.glb": "b1cfc93a9f1f2e1ac31c999bc0d51d26fd96e79b628fb18a3a3808ba13773c57",
+    "crown_2.glb": "ebd6fdfff10cee71dc582ebbe109b6029711af723079f4f1275ef00b218cb78d",
+    "leaves_2.glb": "ed1d3da2230e1c6c9840a319d460202d651a469af95776fd3c6909de38feb69c",
+    "crown_3.glb": "dfa625f0b45c7d2ee53bed93bfee07b509de709c5bc2b95383fe0bd40a9b07f2",
+    "leaves_3.glb": "69d41249807667c5e5fc3d707918d721a51af4fa1f44d2098790035c8eaeebaa"
+  },
+  "images": {
+    "crown_1_0.png": "d7236fec7edae76bebaa4237152ff746b23c9d76b0c1a654b2bbf959eab30962",
+    "crown_1_1.png": "b736c32a01e66e252a05db00559f36e96ef5eecd7ba8f32d56eaeb0226e92913",
+    "crown_1_2.png": "ca00523b5196ac8756a97de301a42848106bec2b8e4ea5ebb25691053aa95176",
+    "crown_1_3.png": "67bd3edce3238982336c837f4c2759c452fbc8224a679a7b7be7cba7b3111d76",
+    "crown_1_4.png": "25f16b2b3536cb867fc7bd1f845aecc11cc5155934c80ddedcaad860ed1dabf8",
+    "crown_1_5.png": "e8dd0627f35fc59a270bd51bb26fef1417f40f23bd511b888bccefe402a9fb27",
+    "crown_1_6.png": "0ece8f159b244b8e8e840b25f677f77072d1923f4cb2e0a8fd587716a04651b3",
+    "crown_1_7.png": "9e1085b4ff8d13637c51b97953828cbddf0d992c21928a9b2edea541fc433858",
+    "crown_2_0.png": "fc7defa0c3cae5943c2897f5f30db77c0ce66706988e3cbd2044a28b92b53a36",
+    "crown_2_1.png": "37a6cffad4daec7d435df6242cf17192e9addaaceebb274f027c458f3334e2ba",
+    "crown_2_2.png": "b14ebdf082624e24b575eb5411d67d098168942108cdd3a1403601a8fb098790",
+    "crown_2_3.png": "74c44a1ac731e404cb59faec7abf16c0450f26fca14012de0c77a05ad96b87de",
+    "crown_2_4.png": "2e5e3cf4b48c47c4a3f72704c6ce29f3bd8cfd78f6543539e5a90ea304bbd306",
+    "crown_2_5.png": "ef64c7a3fb7d9d3e5438b7fe7007abb9bd68420270e1ad0c72d560c973c2072c",
+    "crown_2_6.png": "f7a2fb1c92df8579d8ef82f79ba8c507d3fa28c8fa589c995bb59df0241a28f7",
+    "crown_2_7.png": "662464a5dadb2ea41aae624ddf09f3bed1d617145ae9cccd9614b80c30069f86",
+    "crown_3_0.png": "56e3b256937b5c2fef0f7001f46ee78749aeb861782c900d2d39c6910de761dd",
+    "crown_3_1.png": "4f738465b8056680c0dacd7c52550097a697bd8e624753f63e06549c92a09654",
+    "crown_3_2.png": "aaa4b58cc1d4cb2d7454c49b7d2a39ca7a56339104e32fc1066c8d79aa2f088d",
+    "crown_3_3.png": "0a7d12841b4c7f1aa5ed96a8737b893d81984d540a2b37de994c8fa8f76dca5b",
+    "crown_3_4.png": "0d80312572749773d1b09be4e934ef8dc850ad4246d7296d17fb646d2199de9c",
+    "crown_3_5.png": "ac511cf323d3e46b1eff7c741f27d64a9994f4efc13e565face20a9aebc6d9dc",
+    "crown_3_6.png": "5f7fcc60b1fde4502d22a63c9ad93cf12a99124c19199bf1bd2ca6b86ffdde21",
+    "crown_3_7.png": "fee6a84c1cd1550736b56ad96547190da498b46b8647156c03e00cab2fc5c7eb"
+  }
+}

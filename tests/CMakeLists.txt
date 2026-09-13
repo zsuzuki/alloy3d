@@ -1,3 +1,17 @@
+add_executable(alloy3d_forest_probe ../tools/forest_probe.mm)
+add_executable(alloy3d_forest_billboard_baker ../tools/bake_forest_billboards.mm)
+target_include_directories(alloy3d_forest_billboard_baker PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_forest_billboard_baker PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_forest_billboard_baker shaders)
+target_include_directories(alloy3d_forest_probe PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_forest_probe PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_forest_probe shaders)
+add_test(NAME forest_scene COMMAND alloy3d_forest_probe
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib
+  ${CMAKE_SOURCE_DIR}/assets/samples/forest
+  ${CMAKE_BINARY_DIR}/forest-preview)
+set_tests_properties(forest_scene PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77 TIMEOUT 90)
+
 add_executable(alloy3d_render_probe ../tools/render_probe.mm)
 target_include_directories(alloy3d_render_probe PRIVATE ../functions/internal)
 target_link_libraries(alloy3d_render_probe PRIVATE Alloy3D::application)
@@ -147,3 +161,12 @@ foreach(FRAMES 0 1 3)
   set_tests_properties(renderer_shutdown_${FRAMES} PROPERTIES
     ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77 TIMEOUT 30)
 endforeach()
+
+add_executable(alloy3d_texture_transform_regression texture_transform_regression.mm)
+target_include_directories(alloy3d_texture_transform_regression PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_texture_transform_regression PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_texture_transform_regression shaders)
+add_test(NAME texture_transform_regression COMMAND alloy3d_texture_transform_regression
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib
+  ${CMAKE_SOURCE_DIR}/assets/tests/materials)
+set_tests_properties(texture_transform_regression PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)

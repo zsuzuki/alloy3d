@@ -21,10 +21,12 @@ Alloy3D was split out from the earlier `metaltest` rendering test repository.
 - [カメラとモデルの全体表示](docs/camera-ja.md)
 - [基本マテリアル](docs/materials-ja.md)
 - [テクスチャのミップマップ](docs/mipmaps-ja.md)
+- [モデルのUV変換と流れるテクスチャ](docs/model-texture-ja.md)
 - [平行光源とシャドウマップ](docs/shadows-ja.md)
 - [距離フォグと空・地面の環境光](docs/environment-ja.md)
 - [モデルの簡易ハイライト](docs/highlights-ja.md)
 - [モデルのカスタムシェーダー](docs/custom-shaders-ja.md)
+- [雨上がりの森林サンプル](docs/forest-sample-ja.md)
 
 ## Status
 
@@ -60,6 +62,15 @@ Primary CMake targets:
 - `Alloy3D::application`: C++ application-loop API and macOS Metal host bridge
 - `Alloy3D::functions`: implementation library used by `Alloy3D::application`
 - `alloy3d_viewer`: bundled sample app, built when `ALLOY3D_BUILD_VIEWER=ON`
+- `alloy3d_forest`: forest atmosphere sample, built when `ALLOY3D_BUILD_FOREST=ON`
+
+The forest sample combines swaying grass, ferns and foliage, mist, warm shafts of
+sunlight, textured soil, bark and mossy rocks, and a flowing stream. Three procedural
+tree variants use recursive branching, attached foliage, and three levels of crown detail,
+including baked billboards in the distance. Water uses a generated flowing surface texture.
+Launch it with `open build/alloy3d_forest.app`.
+`ALLOY3D_BUILD_FOREST` initially follows `ALLOY3D_BUILD_VIEWER`; disable both
+explicitly when reusing a previously configured build for library-only work.
 
 ## Sample Assets
 

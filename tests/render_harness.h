@@ -34,6 +34,7 @@ struct Harness
   id<MTLCommandBuffer>     commands[3] = {nil, nil, nil};
   double                   submitMs = 0, encodeMs = 0, gpuMs = 0;
   NSUInteger               size;
+  MTLClearColor            clearColor = MTLClearColorMake(0, 0, 0, 0);
 
   Harness(id<MTLDevice> d, const char *shader, NSUInteger dimension = 256) : device(d), size(dimension)
   {
@@ -104,7 +105,7 @@ struct Harness
   {
     auto pass                            = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture     = colors[slot];
-    pass.colorAttachments[0].clearColor  = MTLClearColorMake(0, 0, 0, 0);
+    pass.colorAttachments[0].clearColor  = clearColor;
     pass.colorAttachments[0].loadAction  = MTLLoadActionClear;
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
     pass.depthAttachment.texture         = depth;

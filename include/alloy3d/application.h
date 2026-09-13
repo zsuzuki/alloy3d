@@ -7,6 +7,7 @@
 #include <alloy3d/model.h>
 #include <alloy3d/model_instance.h>
 #include <alloy3d/model_shader.h>
+#include <alloy3d/model_texture.h>
 #include <alloy3d/render_memory.h>
 #include <alloy3d/sprite.h>
 #include <memory>
@@ -91,6 +92,10 @@ public:
   // Persistent model draw state, copied at submission (also for an instance batch).
   // Default strength is zero. Invalid settings throw without changing state.
   virtual bool SetModelHighlight3D(const ModelHighlight3D &highlight) { return false; }
+
+  // Transform base-color UVs, including MASK shadow coverage and custom surface UVs.
+  // Identity by default. Invalid values throw without changing state in the bundled host.
+  virtual bool SetModelTextureTransform3D(const ModelTextureTransform3D &transform) { return false; }
 
   // Direction the light travels, in world coordinates.
   virtual void SetLight3D(simd_float3 direction, float ambient, float diffuse) = 0;

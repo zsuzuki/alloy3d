@@ -17,6 +17,7 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 option(ALLOY3D_BUILD_VIEWER "Build the bundled Alloy3D sample viewer app" ON)
+option(ALLOY3D_BUILD_FOREST "Build the forest atmosphere sample app" ${ALLOY3D_BUILD_VIEWER})
 option(ALLOY3D_INSTALL "Enable install rules for Alloy3D library targets and headers" ON)
 option(ALLOY3D_BUILD_TESTS "Build Metal regression tests and render benchmark" OFF)
 
@@ -179,6 +180,35 @@ if(ALLOY3D_BUILD_VIEWER)
       $<TARGET_FILE_DIR:alloy3d_viewer>/../Resources/shaders/shaders.metallib
     COMMENT "COPY: Shader Library"
   )
+endif()
+
+if(ALLOY3D_BUILD_FOREST)
+  add_executable(alloy3d_forest MACOSX_BUNDLE samples/forest/main.cpp)
+  target_link_libraries(alloy3d_forest PRIVATE Alloy3D::application)
+  set_target_properties(alloy3d_forest PROPERTIES
+    MACOSX_BUNDLE_GUI_IDENTIFIER org.suzukiz.alloy3d.forest)
+  set(FOREST_ASSETS ground tree tree_2 tree_3 crown crown_2 crown_3
+                leaves leaves_2 leaves_3 crown_lod crown_lod_2 crown_lod_3
+                leaves_lod leaves_lod_2 leaves_lod_3 grass fern rock beam mote water droplet)
+  foreach(VARIANT RANGE 1 3)
+    foreach(VIEW RANGE 0 7)
+      list(APPEND FOREST_ASSETS "billboard_${VARIANT}_${VIEW}")
+    endforeach()
+  endforeach()
+  foreach(ASSET IN LISTS FOREST_ASSETS)
+    set(RESOURCE "${CMAKE_CURRENT_SOURCE_DIR}/assets/samples/forest/${ASSET}.glb")
+    target_sources(alloy3d_forest PRIVATE "${RESOURCE}")
+    set_source_files_properties("${RESOURCE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources/forest)
+  endforeach()
+  add_dependencies(alloy3d_forest shaders)
+  set_property(TARGET alloy3d_forest APPEND PROPERTY LINK_DEPENDS
+    ${CMAKE_BINARY_DIR}/shaders/shaders.metallib)
+  add_custom_command(TARGET alloy3d_forest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+      $<TARGET_BUNDLE_DIR:alloy3d_forest>/Contents/Resources/shaders
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      ${CMAKE_BINARY_DIR}/shaders/shaders.metallib
+      $<TARGET_BUNDLE_DIR:alloy3d_forest>/Contents/Resources/shaders/shaders.metallib)
 endif()
 
 if(ALLOY3D_INSTALL)

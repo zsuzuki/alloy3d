@@ -61,6 +61,7 @@ struct MaterialUniforms
   // alphaMode (OPAQUE=0, MASK=1, BLEND=2), cutoff, doubleSided, unlit.
   simd_float4 parameters;
   simd_float4 highlight; // strength, shininess, perspective camera, reserved
+  simd_float4 textureTransform; // UV scale.xy, offset.zw (identity: 1,1,0,0)
 };
 
 struct ModelInstanceUniforms
