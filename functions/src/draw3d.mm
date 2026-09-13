@@ -39,7 +39,7 @@ using DrawText3DPtr = std::shared_ptr<DrawText3D>;
 struct MetalModelShader final : alloy3d::ModelShader
 {
   std::shared_ptr<const int> owner;
-  id<MTLRenderPipelineState> pipelines[3] = {nil, nil, nil}; // opaque, blend, instances
+  id<MTLRenderPipelineState> pipelines[4] = {nil, nil, nil, nil}; // opaque, blend, instances, blend instances
   ~MetalModelShader() override
   {
     for (auto pipeline : pipelines)
@@ -84,6 +84,24 @@ struct DrawModel3D
   {
   }
   ~DrawModel3D() { [model release]; }
+  DrawModel3D(const DrawModel3D &source, NSUInteger offset, NSUInteger count)
+      : DrawModel3D(source.model, offset, count)
+  {
+    shader = source.shader; parameters = source.parameters; highlight = source.highlight;
+    textureTransform = source.textureTransform; maxAnisotropy = source.maxAnisotropy;
+    normalStrength = source.normalStrength; materialDetail = source.materialDetail;
+    transmission = source.transmission;
+  }
+  bool sameStyle(const DrawModel3D &other) const
+  {
+    return shader == other.shader && simd_all(parameters == other.parameters) &&
+        highlight.strength == other.highlight.strength && highlight.shininess == other.highlight.shininess &&
+        simd_all(textureTransform.scale == other.textureTransform.scale) &&
+        simd_all(textureTransform.offset == other.textureTransform.offset) &&
+        maxAnisotropy == other.maxAnisotropy && normalStrength == other.normalStrength &&
+        materialDetail == other.materialDetail && transmission.strength == other.transmission.strength &&
+        simd_all(transmission.color == other.transmission.color);
+  }
 };
 
 struct TransparentPart
@@ -174,7 +192,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   id<MTLRenderPipelineState> pipelineState_;
   id<MTLRenderPipelineState> pipelineStateText_;
   id<MTLRenderPipelineState>                          pipelineStateModel_[2];
-  id<MTLRenderPipelineState>                          pipelineStateModelInstances_;
+  id<MTLRenderPipelineState>                          pipelineStateModelInstances_[2];
+  bool transparentBatching_;
   id<MTLDepthStencilState>                            modelDepth_[2];
   std::vector<TransparentPart>                        transparentParts_;
   id<MTLBuffer>              uniformBuffer_[3];
@@ -293,8 +312,12 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   vertexFunction               = [library newFunctionWithName:@"modelInstanceVert3d"];
   pipelineDesc.label           = @"PipelineModelInstances3D";
   pipelineDesc.vertexFunction  = vertexFunction;
-  pipelineStateModelInstances_ = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc
-                                                                         error:&error];
+  for (int blend = 0; blend < 2; ++blend)
+  {
+    colorAttachment.blendingEnabled = blend;
+    pipelineStateModelInstances_[blend] = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
+    if (!pipelineStateModelInstances_[blend]) throw std::runtime_error("Alloy3D instance pipeline creation failed");
+  }
   [vertexFunction release];
 
   [pipelineDesc release];
@@ -373,11 +396,11 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     color.destinationRGBBlendFactor   = MTLBlendFactorOneMinusSourceAlpha;
     color.sourceAlphaBlendFactor      = MTLBlendFactorOne;
     color.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 4; ++i)
     {
       descriptor.vertexFunction = [[library
-          newFunctionWithName:i == 2 ? @"modelInstanceVert3d" : @"modelVert3d"] autorelease];
-      color.blendingEnabled     = i == 1;
+          newFunctionWithName:i >= 2 ? @"modelInstanceVert3d" : @"modelVert3d"] autorelease];
+      color.blendingEnabled     = (i % 2) == 1;
       shader->pipelines[i] = [device_ newRenderPipelineStateWithDescriptor:descriptor error:&error];
       if (!shader->pipelines[i])
       {
@@ -541,7 +564,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     [pipelineStateModel_[blend] release];
     [modelDepth_[blend] release];
   }
-  [pipelineStateModelInstances_ release];
+  for (auto pipeline : pipelineStateModelInstances_) [pipeline release];
   [whiteTexture_ release];
   [shadowFallback_ release];
   [super dealloc];
@@ -1029,6 +1052,11 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   fogInverseRange_ = inverseRange;
 }
 
+- (void)setTransparentBatching:(bool)enabled
+{
+  transparentBatching_ = enabled;
+}
+
 - (void)setHeightFog:(const alloy3d::HeightFog3D &)fog
 {
   if (!simd_all(fog.color >= 0) || !simd_all(fog.color <= 1) ||
@@ -1344,8 +1372,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
         [renderEncoder setFragmentSamplerState:[self modelSampler:dmodel.maxAnisotropy] atIndex:0];
         const bool instanced = dmodel.instanceCount != 0;
         auto       pipeline =
-            dmodel.shader ? dmodel.shader->pipelines[instanced ? 2 : int(blend)]
-                          : (instanced ? pipelineStateModelInstances_ : pipelineStateModel_[blend]);
+            dmodel.shader ? dmodel.shader->pipelines[instanced ? 2 + int(blend) : int(blend)]
+                          : (instanced ? pipelineStateModelInstances_[blend] : pipelineStateModel_[blend]);
         [renderEncoder setRenderPipelineState:pipeline];
         if (dmodel.shader)
           [renderEncoder setFragmentBytes:&dmodel.parameters
@@ -1430,8 +1458,34 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
                 transparentParts_.end(),
                 [](const auto &a, const auto &b)
                 { return a.depth == b.depth ? a.order < b.order : a.depth > b.depth; });
-      for (const auto &part : transparentParts_)
-        drawPart(*part.draw, part.part, true);
+      const auto offset = modelInstances_.size();
+      if (transparentBatching_ && !transparentParts_.empty())
+      {
+        SimpleGuard guard(modelLock_);
+        auto instances = instanceBuffers_[pageIndex_].append(device_, offset, transparentParts_.size());
+        for (size_t i = 0; i < transparentParts_.size(); ++i)
+        {
+          const auto &source = *transparentParts_[i].draw;
+          instances[i].modelView = simd_mul(mdlview, BuildModelMatrix(source.position, source.rotation, source.scale));
+          instances[i].normalTransform = alloy3d::metal::NormalMatrix(instances[i].modelView);
+          instances[i].color = source.color;
+        }
+      }
+      for (size_t first = 0; first < transparentParts_.size();)
+      {
+        const auto &part = transparentParts_[first];
+        size_t end = first + 1;
+        if (transparentBatching_)
+          while (end < transparentParts_.size() && transparentParts_[end].part == part.part &&
+                 part.draw->sameStyle(*transparentParts_[end].draw)) ++end;
+        if (end - first > 1)
+        {
+          DrawModel3D batch(*part.draw, offset + first, end - first);
+          drawPart(batch, part.part, true);
+        }
+        else drawPart(*part.draw, part.part, true);
+        first = end;
+      }
       transparentParts_.clear();
       drawModelList_.clear();
       modelInstances_.clear();

@@ -134,3 +134,6 @@ Metalの呼び出し仕様はAppleの
 法線変換はKhronosの
 [The Mathematics of Skinning](https://github.khronos.org/Vulkan-Site/tutorial/latest/Advanced_glTF/Skeletal_Compute_Skinning/02_skinning_math.html)
 を参照。
+
+`SetTransparentBatching3D(true)` を指定すると、ソート後に連続する同一パーツ・設定をまとめます。
+詳細は[半透明バッチ](transparent-batching-ja.md)を参照してください。

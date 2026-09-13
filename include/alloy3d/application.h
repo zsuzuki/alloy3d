@@ -95,6 +95,9 @@ public:
   virtual bool SetModelHighlight3D(const ModelHighlight3D &highlight) { return false; }
   virtual bool SetModelMaterialDetail3D(const ModelMaterialDetail3D &detail) { return false; }
   virtual bool SetModelTransmission3D(const ModelTransmission3D &transmission) { return false; }
+  // Frame-level optimization: coalesce compatible parts after transparency sorting.
+  // Disabled by default; sorting order and depth-write policy are preserved.
+  virtual bool SetTransparentBatching3D(bool enabled) { return false; }
 
   // Transform base-color UVs, including MASK shadow coverage and custom surface UVs.
   // Identity by default. Invalid values throw without changing state in the bundled host.
@@ -152,7 +155,7 @@ public:
   // The bundled host implements this; unsupported custom contexts return null.
   virtual ModelPtr CreateModelInstance(ModelPtr source) { return {}; }
   // Copies placements at submission; all use the model's pose at render time.
-  // BLEND materials or faded placements use sorted individual draws in the bundled host.
+  // BLEND materials or faded placements are sorted individually, then optionally batched.
   // Custom contexts retain correct behavior through this individual-draw fallback.
   virtual void DrawModelInstances3D(ModelPtr model, std::span<const ModelInstance> instances)
   {

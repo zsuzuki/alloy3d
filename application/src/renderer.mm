@@ -324,6 +324,12 @@ public:
     return true;
   }
 
+  bool SetTransparentBatching3D(bool enabled) override
+  {
+    [draw3d_ setTransparentBatching:enabled];
+    return true;
+  }
+
   void SetDirectionalLight3D(const alloy3d::DirectionalLight3D &light) override
   {
     [draw3d_ setDirectionalLight:light];

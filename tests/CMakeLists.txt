@@ -1,4 +1,11 @@
 add_executable(alloy3d_forest_probe ../tools/forest_probe.mm)
+add_executable(alloy3d_transparent_batch_regression transparent_batch_regression.mm)
+target_include_directories(alloy3d_transparent_batch_regression PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_transparent_batch_regression PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_transparent_batch_regression shaders)
+add_test(NAME transparent_batch_regression COMMAND alloy3d_transparent_batch_regression
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib ${CMAKE_SOURCE_DIR}/assets/tests/materials)
+set_tests_properties(transparent_batch_regression PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
 add_executable(alloy3d_height_fog_regression height_fog_regression.mm)
 target_include_directories(alloy3d_height_fog_regression PRIVATE ../functions/internal)
 target_link_libraries(alloy3d_height_fog_regression PRIVATE Alloy3D::application)

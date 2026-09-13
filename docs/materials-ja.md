@@ -102,3 +102,6 @@ MASKの細部はアルファの平均化により遠景で変化する場合が�
 仕様の参照先:
 [glTF 2.0 Alpha Coverage / Double Sided](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#alpha-coverage)、
 [KHR_materials_unlit](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_unlit)。
+
+`SetTransparentBatching3D(true)` を指定すると、ソート後に連続する同一パーツ・設定をまとめます。
+詳細は[半透明バッチ](transparent-batching-ja.md)を参照してください。

@@ -32,6 +32,7 @@ int main(int argc, char **argv)
         NSUInteger samples = samplesEnv ? std::strtoul(samplesEnv, nullptr, 10) : 1;
         Check(samples == 1 || samples == 2 || samples == 4 || samples == 8, "invalid forest samples");
         Harness h(device, argv[1], 1000, samples);
+        [h.draw setTransparentBatching:true];
         const char *anisotropyEnv = std::getenv("ALLOY3D_FOREST_ANISOTROPY");
         uint32_t anisotropy = anisotropyEnv ? std::strtoul(anisotropyEnv, nullptr, 10) : 8;
         [h.draw setModelTextureSampling:(alloy3d::ModelTextureSampling3D{anisotropy})];
@@ -141,6 +142,13 @@ int main(int argc, char **argv)
               });
         };
         auto first = render(0);
+        auto batchedDraws = [h.draw modelDrawCallCount];
+        [h.draw setTransparentBatching:false];
+        Check(first == render(0), "transparent batching changed forest pixels");
+        auto scalarDraws = [h.draw modelDrawCallCount];
+        Check(batchedDraws < scalarDraws, "transparent batching did not reduce forest draws");
+        std::printf("transparent batching: %lu -> %lu model draws\n", (unsigned long)scalarDraws, (unsigned long)batchedDraws);
+        [h.draw setTransparentBatching:true];
         scene.settings.normalMaps = false;
         auto noNormals = render(0);
         Check(first != noNormals, "forest normal maps did not affect lighting");
