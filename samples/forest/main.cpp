@@ -86,6 +86,7 @@ public:
           auto &s = scene_.settings;
           switch (key)
           {
+          case Key::N: s.normalMaps = !s.normalMaps; break;
           case Key::G:
             s.fog             = !s.fog;
             environmentDirty_ = true;
@@ -144,6 +145,7 @@ public:
     }
     scene_.Animate(scene_.time + (scene_.settings.paused ? 0 : dt),
                    ctx.GetCamera().getEyePosition());
+    ctx.SetModelNormalMapping3D({scene_.settings.normalMaps ? 1.f : 0.f});
     scene_.Draw(
         [&](size_t asset, std::span<const alloy3d::ModelInstance> instances)
         {

@@ -59,6 +59,7 @@ struct DrawModel3D
   alloy3d::ModelHighlight3D         highlight;
   alloy3d::ModelTextureTransform3D textureTransform;
   uint32_t maxAnisotropy = 1;
+  float normalStrength = 1;
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -75,7 +76,7 @@ struct DrawModel3D
       : model(std::exchange(other.model, nil)), position(other.position), rotation(other.rotation),
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
-        textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy),
+        textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), normalStrength(other.normalStrength),
         instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
@@ -200,6 +201,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   alloy3d::ModelHighlight3D         modelHighlight_;
   alloy3d::ModelTextureTransform3D modelTextureTransform_;
   alloy3d::ModelTextureSampling3D modelTextureSampling_;
+  alloy3d::ModelNormalMapping3D modelNormalMapping_;
   id<MTLSamplerState> modelSamplers_[17]; // Bounded lazy cache, index 1..16.
 
   SimpleLock primLock_;
@@ -427,6 +429,13 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     throw std::invalid_argument("Alloy3D anisotropy must be in [1,16]");
   [self modelSampler:sampling.maxAnisotropy];
   modelTextureSampling_ = sampling;
+}
+
+- (void)setModelNormalMapping:(const alloy3d::ModelNormalMapping3D &)mapping
+{
+  if (!std::isfinite(mapping.strength) || mapping.strength < 0 || mapping.strength > 8)
+    throw std::invalid_argument("Alloy3D normal strength must be finite in [0,8]");
+  modelNormalMapping_ = mapping;
 }
 
 - (void)setModelHighlight:(const alloy3d::ModelHighlight3D &)highlight
@@ -1154,6 +1163,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   drawModelList_.back().highlight = modelHighlight_;
   drawModelList_.back().textureTransform = modelTextureTransform_;
   drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
+  drawModelList_.back().normalStrength = modelNormalMapping_.strength;
 }
 
 - (void)drawModelInstances:(MetalModel *)model
@@ -1183,6 +1193,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       drawModelList_.back().highlight = modelHighlight_;
       drawModelList_.back().textureTransform = modelTextureTransform_;
       drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
+      drawModelList_.back().normalStrength = modelNormalMapping_.strength;
     }
     return;
   }
@@ -1196,6 +1207,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     drawModelList_.back().highlight = modelHighlight_;
     drawModelList_.back().textureTransform = modelTextureTransform_;
     drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
+    drawModelList_.back().normalStrength = modelNormalMapping_.strength;
   }
   catch (...)
   {
@@ -1298,6 +1310,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
             {dmodel.highlight.strength, dmodel.highlight.shininess,
              float(camera->getProjectionMode() == alloy3d::ProjectionMode::Perspective), 0},
             simd_make_float4(dmodel.textureTransform.scale, dmodel.textureTransform.offset)};
+        material.normalMapping = {part.normalTexture && dmodel.normalStrength > 0 ? 1.f : 0.f,
+                                  part.normalScale * dmodel.normalStrength, 0, 0};
         [renderEncoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
         [renderEncoder setFragmentBytes:&material
                                  length:sizeof(material)
@@ -1327,6 +1341,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
                                atIndex:BufferIndexJointMatrices];
         [renderEncoder setFragmentTexture:part.texture != nil ? part.texture : whiteTexture_
                                   atIndex:TextureIndexColor];
+        [renderEncoder setFragmentTexture:part.normalTexture ? part.normalTexture : whiteTexture_
+                                  atIndex:2];
         [renderEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                                   indexCount:part.indexCount
                                    indexType:MTLIndexTypeUInt32

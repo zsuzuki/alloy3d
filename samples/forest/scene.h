@@ -114,12 +114,9 @@ float3 alloy3dShade(ModelSurface s, float4 p)
     float3 bitangent=normalize((dy*tx.x-dx*ty.x)/det);
     float a=6.2831853*(uv.x*7+uv.y*3);
     float b=6.2831853*(uv.x*3-uv.y*5)+p.x*.31;
-    float height=dot(s.baseColor,float3(.2126,.7152,.0722));
-    float hx=dfdx(height), hy=dfdy(height);
-    float du=(hx*ty.y-hy*tx.y)/det;
-    float dv=(hy*tx.x-hx*ty.x)/det;
-    float sx=.035*cos(a)+clamp(du*.012,-.16,.16);
-    float sy=.025*cos(b)+clamp(dv*.012,-.16,.16);
+    // The library's normal map supplies detail independently of reflected color.
+    float sx=.015*cos(a);
+    float sy=.010*cos(b);
     n=normalize(n-tangent*sx-bitangent*sy);
   }
   float facing=saturate(dot(n,s.viewDirection));
@@ -178,7 +175,7 @@ inline float TreeBaseHeight(float x, float z, float scale)
 struct Settings
 {
   bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
-       flow = true, billboards = true, droplets = true;
+       flow = true, billboards = true, droplets = true, normalMaps = true;
 };
 
 class Scene

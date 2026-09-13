@@ -62,6 +62,7 @@ struct MaterialUniforms
   simd_float4 parameters;
   simd_float4 highlight; // strength, shininess, perspective camera, reserved
   simd_float4 textureTransform; // UV scale.xy, offset.zw (identity: 1,1,0,0)
+  simd_float4 normalMapping; // enabled, scale, reserved, reserved
 };
 
 struct ModelInstanceUniforms
@@ -121,4 +122,5 @@ struct VertexDataModel3D
 #else
   float16x4_t color;
 #endif
+  simd_float4 tangent; // xyz tangent, w handedness; w=0 derives a frame from UVs
 };

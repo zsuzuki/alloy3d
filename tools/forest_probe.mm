@@ -89,6 +89,7 @@ int main(int argc, char **argv)
         bool waterOnly = false, dropsOnly = false;
         auto render = [&](float time)
         {
+          [h.draw setModelNormalMapping:(alloy3d::ModelNormalMapping3D{scene.settings.normalMaps ? 1.f : 0.f})];
           scene.Animate(time, camera.getEyePosition());
           std::array<std::span<const alloy3d::ModelInstance>, forest::Assets.size()> placements;
           scene.Draw([&](size_t asset, auto instances) { placements[asset] = instances; });
@@ -136,6 +137,12 @@ int main(int argc, char **argv)
               });
         };
         auto first = render(0);
+        scene.settings.normalMaps = false;
+        auto noNormals = render(0);
+        Check(first != noNormals, "forest normal maps did not affect lighting");
+        Save(noNormals, h.size, std::string(argv[3]) + "-no-normals.ppm");
+        scene.settings.normalMaps = true;
+        Check(first == render(0), "normal toggle did not restore forest");
         // Check placed root tips against the terrain, including uneven river banks.
         scene.Draw(
             [&](size_t asset, auto instances)

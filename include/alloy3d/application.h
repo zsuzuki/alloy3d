@@ -99,6 +99,7 @@ public:
   virtual bool SetModelTextureTransform3D(const ModelTextureTransform3D &transform) { return false; }
   // Per-draw base-color sampling, including MASK shadows. Default anisotropy is 1.
   virtual bool SetModelTextureSampling3D(const ModelTextureSampling3D &sampling) { return false; }
+  virtual bool SetModelNormalMapping3D(const ModelNormalMapping3D &mapping) { return false; }
 
   // Direction the light travels, in world coordinates.
   virtual void SetLight3D(simd_float3 direction, float ambient, float diffuse) = 0;

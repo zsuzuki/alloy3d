@@ -1,5 +1,9 @@
 # Forest textures
 
+The `*_normal.png` files are linear tangent-space data generated independently by
+`tools/generate_surface_maps.py` from periodic height functions. They are not image-generation
+outputs or normal maps baked from the color images. Regenerate/check with that script and `--check`.
+
 These three original surface images were generated for this sample using the built-in OpenAI image generation tool on 2026-09-13. They are AI-generated material illustrations, not photographs or photogrammetry scans. The PNGs are the unmodified generation outputs; no external download or generation service is needed to build or run the sample.
 
 - `ground.png`: damp earth, needles, and fine forest litter; mapped at 1.6 metres per tile.

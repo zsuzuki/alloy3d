@@ -1,4 +1,11 @@
 add_executable(alloy3d_forest_probe ../tools/forest_probe.mm)
+add_executable(alloy3d_normal_mapping_regression normal_mapping_regression.mm)
+target_include_directories(alloy3d_normal_mapping_regression PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_normal_mapping_regression PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_normal_mapping_regression shaders)
+add_test(NAME normal_mapping_regression COMMAND alloy3d_normal_mapping_regression
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib ${CMAKE_SOURCE_DIR}/assets/tests/normals)
+set_tests_properties(normal_mapping_regression PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
 add_executable(alloy3d_msaa_regression msaa_regression.mm)
 target_include_directories(alloy3d_msaa_regression PRIVATE ../functions/internal)
 target_link_libraries(alloy3d_msaa_regression PRIVATE Alloy3D::application)

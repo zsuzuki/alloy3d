@@ -21,6 +21,7 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
 };
 
 @interface Draw3D : NSObject
+- (void)setModelNormalMapping:(const alloy3d::ModelNormalMapping3D &)mapping;
 - (void)setModelTextureSampling:(const alloy3d::ModelTextureSampling3D &)sampling;
 
 - (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view

@@ -300,6 +300,12 @@ public:
     return true;
   }
 
+  bool SetModelNormalMapping3D(const alloy3d::ModelNormalMapping3D &mapping) override
+  {
+    [draw3d_ setModelNormalMapping:mapping];
+    return true;
+  }
+
   void SetDirectionalLight3D(const alloy3d::DirectionalLight3D &light) override
   {
     [draw3d_ setDirectionalLight:light];

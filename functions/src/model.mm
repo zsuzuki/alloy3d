@@ -32,6 +32,7 @@ struct SourceVertex
   uint32_t    joints[4];
   float       weights[4];
   bool        skinned;
+  simd_float4 tangent{};
 };
 
 struct GpuModelVertex
@@ -42,7 +43,9 @@ struct GpuModelVertex
   simd_uint4  joints;
   simd_float4 weights;
   float16x4_t color;
+  simd_float4 tangent;
 };
+static_assert(sizeof(GpuModelVertex) == sizeof(VertexDataModel3D));
 
 // Per-frame pose contains only transform values, never names or hierarchy containers.
 struct PoseData
@@ -218,14 +221,8 @@ simd_float4 MaterialBaseColor(const cgltf_material *material)
   return simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
-id<MTLTexture> LoadEmbeddedTexture(cgltf_material *material, id<MTLDevice> device)
+id<MTLTexture> LoadEmbeddedTexture(cgltf_texture *texture, id<MTLDevice> device, bool srgb = true)
 {
-  if (material == nullptr || !material->has_pbr_metallic_roughness)
-  {
-    return nil;
-  }
-
-  auto *texture = material->pbr_metallic_roughness.base_color_texture.texture;
   if (texture == nullptr || texture->image == nullptr)
   {
     return nil;
@@ -251,7 +248,7 @@ id<MTLTexture> LoadEmbeddedTexture(cgltf_material *material, id<MTLDevice> devic
   auto    loader = [[MTKTextureLoader alloc] initWithDevice:device];
   NSError *error = nil;
   NSDictionary *options = @{
-    MTKTextureLoaderOptionSRGB : @YES,
+    MTKTextureLoaderOptionSRGB : @(srgb),
     MTKTextureLoaderOptionAllocateMipmaps : @YES,
   };
   id<MTLTexture> tex = [loader newTextureWithData:data options:options error:&error];
@@ -515,6 +512,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   id<MTLBuffer>             jointMatrixBuffers_[3];
   bool                      jointMatricesDirty_[3];
   id<MTLTexture>            texture_;
+  id<MTLTexture>            normalTexture_;
+  float                    normalScale_;
   NSUInteger                indexCount_;
   simd_float4               baseColor_;
   std::vector<simd_float4x4> jointMatrices_;
@@ -530,6 +529,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 
 @synthesize indexBuffer  = indexBuffer_;
 @synthesize texture      = texture_;
+@synthesize normalTexture = normalTexture_;
+@synthesize normalScale = normalScale_;
 @synthesize indexCount   = indexCount_;
 @synthesize baseColor    = baseColor_;
 @synthesize alphaMode    = alphaMode_;
@@ -594,6 +595,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
       gpuVertices[i].weights  = src.skinned ? simd_make_float4(src.weights[0], src.weights[1], src.weights[2], src.weights[3])
                                             : simd_make_float4(0.0f, 0.0f, 0.0f, 0.0f);
       gpuVertices[i].color    = vcvt_f16_f32(src.color);
+      gpuVertices[i].tangent  = src.tangent;
     }
 
     vertexBuffer_ = [device newBufferWithBytes:gpuVertices.data()
@@ -623,6 +625,17 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   alphaCutoff_ = material ? material->alpha_cutoff : .5f;
   doubleSided_ = material && material->double_sided;
   unlit_       = material && material->unlit;
+  if (material && material->normal_texture.texture)
+  {
+    const auto &normal = material->normal_texture;
+    if (normal.texcoord != 0 || normal.has_transform)
+      NSLog(@"Alloy3D normal textures currently require untransformed TEXCOORD_0");
+    else
+    {
+      normalTexture_ = LoadEmbeddedTexture(normal.texture, device_, false);
+      normalScale_ = std::isfinite(normal.scale) ? normal.scale : 1.f;
+    }
+  }
   auto bounds =
       std::make_shared<std::vector<alloy3d::Bounds3D>>(std::max<NSUInteger>(1, jointCount));
   for (const auto &vertex : vertices)
@@ -719,6 +732,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     part->alphaCutoff_     = alphaCutoff_;
     part->doubleSided_     = doubleSided_;
     part->unlit_           = unlit_;
+    part->normalTexture_   = [normalTexture_ retain];
+    part->normalScale_     = normalScale_;
     part->influenceBounds_ = influenceBounds_;
     part->sortCenter_      = sortCenter_;
     part->sortCenterDirty_ = sortCenterDirty_;
@@ -742,6 +757,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   }
   [indexBuffer_ release];
   [texture_ release];
+  [normalTexture_ release];
   [super dealloc];
 }
 
@@ -898,6 +914,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
             }
 
             auto *normals   = FindAttribute(primitive, cgltf_attribute_type_normal);
+            auto *tangents  = FindAttribute(primitive, cgltf_attribute_type_tangent);
             auto *texcoords = FindAttribute(primitive, cgltf_attribute_type_texcoord);
             auto *colors    = FindAttribute(primitive, cgltf_attribute_type_color);
             auto *joints    = FindAttribute(primitive, cgltf_attribute_type_joints);
@@ -911,6 +928,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
               cgltf_float tmp[4] = {};
               cgltf_accessor_read_float(positions, vertexIndex, tmp, 3);
               vertices[vertexIndex].position = simd_make_float3(tmp[0], tmp[1], tmp[2]);
+              if (tangents && cgltf_accessor_read_float(tangents, vertexIndex, tmp, 4))
+                vertices[vertexIndex].tangent = simd_make_float4(tmp[0], tmp[1], tmp[2], tmp[3]);
 
               if (normals != nullptr && cgltf_accessor_read_float(normals, vertexIndex, tmp, 3))
               {
@@ -1011,7 +1030,10 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
               }
             }
 
-            auto texture = LoadEmbeddedTexture(primitive.material, device);
+            auto material = primitive.material;
+            auto texture = LoadEmbeddedTexture(material && material->has_pbr_metallic_roughness
+                                                   ? material->pbr_metallic_roughness.base_color_texture.texture
+                                                   : nullptr, device);
             auto part    = [[ModelPart alloc] initWithSourceVertices:vertices
                                                              indices:indices
                                                              texture:texture

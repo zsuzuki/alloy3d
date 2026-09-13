@@ -20,6 +20,8 @@ struct v2f
     float4 shadowPosition;
     float viewDepth;
     float3 viewPosition;
+    float4 tangent;
+    float2 meshTexcoord;
 };
 
 //
@@ -63,7 +65,7 @@ float3 TransformModelNormal(float4x4 matrix, float3 normal)
 }
 
 void SkinVertex(const device VertexDataModel3D &vd, const device float4x4 *jointMatrices,
-                thread float4 &position, thread float3 &normal, thread float &orientation)
+                thread float4 &position, thread float3 &normal, thread float &orientation, thread float3 &tangent)
 {
   float4   weights = vd.weights;
   float    sum     = weights.x + weights.y + weights.z + weights.w;
@@ -76,6 +78,7 @@ void SkinVertex(const device VertexDataModel3D &vd, const device float4x4 *joint
   }
   else
     transform = jointMatrices[0];
+  tangent = vd.tangent.w != 0 ? (transform * float4(vd.tangent.xyz, 0)).xyz : float3(0);
   position = transform * float4(vd.position, 1.0);
   normal   = TransformModelNormal(transform, vd.normal);
   orientation = determinant(float3x3(transform[0].xyz, transform[1].xyz, transform[2].xyz));
@@ -98,16 +101,19 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   float4                          position;
   float3                          normal;
   float                           orientation;
-  SkinVertex(vd, jointMatrices, position, normal, orientation);
+  float3 tangent;
+  SkinVertex(vd, jointMatrices, position, normal, orientation, tangent);
   o.position   = cameraData.perspectiveTransform * cameraData.worldTransform * position;
   o.viewDepth  = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * position).z : 0;
   // Custom surfaces need view position even with highlights disabled or unlit materials.
 #ifndef ALLOY3D_CUSTOM_SURFACE
-  if (material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0)
+  if ((material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0) ||
+      material.normalMapping.x != 0)
 #endif
     o.viewPosition = (cameraData.worldTransform * position).xyz;
   o.normal     = UnitModelNormal(cameraData.worldNormalTransform * normal);
   o.texcoord   = vd.texcoord * material.textureTransform.xy + material.textureTransform.zw;
+  o.meshTexcoord = vd.texcoord;
   o.color      = vd.color;
   o.modelColor = cameraData.modelColor;
   o.shadowPosition = cameraData.shadowTransform * cameraData.worldTransform * position;
@@ -115,6 +121,8 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
                                                     cameraData.worldTransform[1].xyz,
                                                     cameraData.worldTransform[2].xyz)) <
                  0;
+  o.tangent = float4((cameraData.worldTransform * float4(tangent, 0)).xyz,
+                     vd.tangent.w * (o.mirrored ? -1.f : 1.f));
   return o;
 }
 
@@ -131,16 +139,19 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   float4                              position;
   float3                              normal;
   float                               orientation;
-  SkinVertex(vd, jointMatrices, position, normal, orientation);
+  float3 tangent;
+  SkinVertex(vd, jointMatrices, position, normal, orientation, tangent);
   o.position   = cameraData.perspectiveTransform * instance.modelView * position;
   o.viewDepth  = cameraData.fogColorAndEnabled.w != 0 ? -(instance.modelView * position).z : 0;
   // Custom surfaces need view position even with highlights disabled or unlit materials.
 #ifndef ALLOY3D_CUSTOM_SURFACE
-  if (material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0)
+  if ((material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0) ||
+      material.normalMapping.x != 0)
 #endif
     o.viewPosition = (instance.modelView * position).xyz;
   o.normal     = UnitModelNormal(instance.normalTransform * normal);
   o.texcoord   = vd.texcoord * material.textureTransform.xy + material.textureTransform.zw;
+  o.meshTexcoord = vd.texcoord;
   o.color      = vd.color;
   o.modelColor = instance.color;
   o.shadowPosition = cameraData.shadowTransform * instance.modelView * position;
@@ -148,6 +159,8 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
                                                     instance.modelView[1].xyz,
                                                     instance.modelView[2].xyz)) <
                  0;
+  o.tangent = float4((instance.modelView * float4(tangent, 0)).xyz,
+                     vd.tangent.w * (o.mirrored ? -1.f : 1.f));
   return o;
 }
 
@@ -174,7 +187,8 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                            constant MaterialUniforms      &material [[buffer(5)]],
                            texture2d<half, access::sample> tex [[texture(0)]],
                            depth2d<float>                  shadowMap [[texture(1)]],
-                           sampler colorSampler [[sampler(0)]]
+                           sampler colorSampler [[sampler(0)]],
+                           texture2d<half> normalMap [[texture(2)]]
 #ifdef ALLOY3D_CUSTOM_SURFACE
                            ,
                            constant float4 &parameters [[buffer(6)]]
@@ -199,6 +213,31 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
     return ApplyFog(baseColor, in.viewDepth, cameraData);
 #endif
   float3 n = normalLength >= 0.001 ? in.normal / normalLength : float3(0);
+  if (material.normalMapping.x != 0 && !unlit)
+  {
+    float3 t = in.tangent.xyz;
+    float handedness = in.tangent.w;
+    if (handedness == 0)
+    {
+      float3 dx = dfdx(in.viewPosition), dy = dfdy(in.viewPosition);
+      float2 ux = dfdx(in.meshTexcoord), uy = dfdy(in.meshTexcoord);
+      float det = ux.x * uy.y - ux.y * uy.x;
+      if (abs(det) > 1e-12)
+      {
+        t = (dx * uy.y - dy * ux.y) / det;
+        float3 b = (dy * ux.x - dx * uy.x) / det;
+        handedness = dot(cross(n, t), b) < 0 ? -1.f : 1.f;
+      }
+    }
+    t = UnitModelNormal(t - n * dot(n, t));
+    if (handedness != 0 && dot(t, t) > .5f)
+    {
+      float3 mapped = float3(normalMap.sample(colorSampler, in.texcoord).xyz) * 2 - 1;
+      mapped.xy *= material.normalMapping.y;
+      float3 result = UnitModelNormal(t * mapped.x + cross(n, t) * handedness * mapped.y + n * mapped.z);
+      if (dot(result, result) > .5f) n = result;
+    }
+  }
   if (!front)
     n = -n;
   float3 l       = normalize(-cameraData.lightDirectionAndAmbient.xyz);
@@ -277,7 +316,8 @@ fragment half4 textFrag3d(v2f in [[stage_in]], texture2d<half, access::sample> t
 fragment void shadowModelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]],
                                 constant MaterialUniforms      &material [[buffer(5)]],
                                 texture2d<half, access::sample> tex [[texture(0)]],
-                                sampler colorSampler [[sampler(0)]])
+                                sampler colorSampler [[sampler(0)]],
+                           texture2d<half> normalMap [[texture(2)]])
 {
   if ((frontFacing == bool(in.mirrored)) && material.parameters.z == 0)
     discard_fragment();

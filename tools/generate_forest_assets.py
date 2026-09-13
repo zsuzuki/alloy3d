@@ -93,7 +93,7 @@ class Mesh:
                 sums[k]=add(sums.get(k,(0,0,0)),n)
         self.n=[unit(sums[key(p)]) for p in self.p]
 
-    def glb(self, blend=False, unlit=False, texture=None, mask=False):
+    def glb(self, blend=False, unlit=False, texture=None, mask=False, normal=None, normal_scale=1):
         data, views, acc = bytearray(), [], []
         for values, size in ((self.p, 3), (self.n, 3), (self.c, 4), (self.uv, 2)):
             flat = [x for v in values for x in v]
@@ -123,6 +123,15 @@ class Mesh:
             doc['textures'] = [dict(source=0,sampler=0)]
             material['pbrMetallicRoughness']['baseColorTexture'] = dict(index=0)
         if unlit: doc['extensionsUsed'] = ['KHR_materials_unlit']
+        if normal:
+            index = len(doc.get('textures', []))
+            doc.setdefault('images', []).append(dict(bufferView=len(views), mimeType='image/png'))
+            views.append(dict(buffer=0, byteOffset=len(data), byteLength=len(normal)))
+            data.extend(normal)
+            data.extend(b'\0' * (-len(data) % 4))
+            doc.setdefault('textures', []).append(dict(source=index))
+            doc['buffers'][0]['byteLength'] = len(data)
+            material['normalTexture'] = dict(index=index, scale=normal_scale)
         payload = json.dumps(doc, separators=(',', ':')).encode()
         payload += b' ' * (-len(payload) % 4)
         return struct.pack('<III', 0x46546C67, 2, 28+len(payload)+len(data)) + struct.pack('<I4s', len(payload), b'JSON') + payload + struct.pack('<I4s', len(data), b'BIN\0') + data
@@ -301,7 +310,7 @@ def generate():
                 ground.tri(*(points[i] for i in ids), tuple(colors[i] for i in ids),
                            tuple((points[i][0]/1.6,points[i][2]/1.6) for i in ids))
     ground.smooth_normals()
-    yield 'ground', ground.glb(texture=albedo('ground'))
+    yield 'ground', ground.glb(texture=albedo('ground'), normal=albedo('ground_normal'), normal_scale=.6)
 
     water = Mesh()
     # Segments follow a monotonically falling river; UV.v follows distance downstream.
@@ -317,12 +326,12 @@ def generate():
                 colors.append((1,1,1,.88))
             for ids in ((0,1,2),(0,2,3)):
                 water.tri(*(verts[i] for i in ids),tuple(colors[i] for i in ids),tuple(coords[i] for i in ids))
-    yield 'water', water.glb(blend=True,texture=albedo('water_surface'))
+    yield 'water', water.glb(blend=True,texture=albedo('water_surface'), normal=albedo('water_normal'), normal_scale=.5)
 
     for variant,suffix in enumerate(('', '_2', '_3')):
         trunk,crown,leaves,crown_lod,leaves_lod,stats = forest_tree(variant)
         print('tree quality:',json.dumps(stats,sort_keys=True))
-        yield 'tree'+suffix, trunk.glb(texture=albedo('bark'))
+        yield 'tree'+suffix, trunk.glb(texture=albedo('bark'), normal=albedo('bark_normal'), normal_scale=.65)
         yield 'crown'+suffix, crown.glb(texture=albedo('bark'))
         yield 'leaves'+suffix, leaves.glb()
         yield 'crown_lod'+suffix, crown_lod.glb(texture=albedo('bark'))
@@ -381,7 +390,7 @@ def generate():
             for ids in faces:
                 rock.tri(*(points[k] for k in ids),color,tuple(coords[k] for k in ids))
     rock.smooth_normals()
-    yield 'rock', rock.glb(texture=albedo('moss_rock'))
+    yield 'rock', rock.glb(texture=albedo('moss_rock'), normal=albedo('rock_normal'), normal_scale=.7)
 
     # One soft, transparent sheet per shaft. Vertex alpha fades on every edge.
     beam = Mesh()

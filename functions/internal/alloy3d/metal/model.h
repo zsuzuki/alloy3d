@@ -10,6 +10,8 @@
 @property(readonly) _Nullable id<MTLBuffer> vertexBuffer;
 @property(readonly) _Nullable id<MTLBuffer> indexBuffer;
 @property(readonly) _Nullable id<MTLTexture> texture;
+@property(readonly) _Nullable id<MTLTexture> normalTexture;
+@property(readonly) float normalScale;
 @property(readonly) NSUInteger indexCount;
 @property(readonly) simd_float4 baseColor;
 // glTF alpha modes: 0 OPAQUE, 1 MASK, 2 BLEND.
