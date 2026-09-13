@@ -14,6 +14,8 @@ struct ModelTextureSampling3D
 {
   // 1 disables anisotropic filtering. Integer range [1,16].
   uint32_t maxAnisotropy = 1;
+  // Smooth MASK edges using MSAA coverage. Ignored at sampleCount=1 or on faded draws.
+  bool alphaToCoverage = false;
 };
 
 // Base-color and normal-map UV transform: sampledUV = meshUV * scale + offset.

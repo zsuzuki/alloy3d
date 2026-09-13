@@ -41,7 +41,7 @@ public:
   }
   void Start(alloy3d::ApplicationContext &ctx) override
   {
-    ctx.SetModelTextureSampling3D({8});
+    ctx.SetModelTextureSampling3D({8,true});
     ctx.SetTransparentBatching3D(true);
     ctx.SetFrustumCulling3D(true);
     for (size_t i = 0; i < models_.size(); ++i)

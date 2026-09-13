@@ -8,6 +8,7 @@
 
 #include <metal_stdlib>
 using namespace metal;
+constant bool AlphaCoverage [[function_constant(0)]];
 
 struct v2f
 {
@@ -239,10 +240,18 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   if (!front && material.parameters.z == 0)
     discard_fragment();
   half4             baseColor = in.color * tex.sample(colorSampler, in.texcoord).rgba;
-  if (material.parameters.x == 1 && float(baseColor.a) < material.parameters.y)
+  // Keep the binary-cutout discard outside the derivative branch. In particular,
+  // discarded samples must never update depth when a later opaque draw overlaps.
+  if (material.parameters.x == 1 && !AlphaCoverage && float(baseColor.a) < material.parameters.y)
     discard_fragment();
-  if (material.parameters.x != 2)
-    baseColor.a = 1;
+  float maskCoverage = 1;
+  if (material.parameters.x == 1 && AlphaCoverage)
+  {
+    float alpha = float(baseColor.a);
+    maskCoverage = saturate((alpha-material.parameters.y)/max(fwidth(alpha),1.f/255.f)+.5f);
+    if (maskCoverage <= 0) discard_fragment();
+  }
+  if (material.parameters.x != 2) baseColor.a = half(maskCoverage);
   // Placement alpha is an explicit application fade, applied after glTF alpha rules.
   baseColor *= half4(in.modelColor);
   float normalLength = length(in.normal);

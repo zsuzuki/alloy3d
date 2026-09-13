@@ -1,3 +1,10 @@
+add_executable(alloy3d_alpha_coverage_regression alpha_coverage_regression.mm)
+target_include_directories(alloy3d_alpha_coverage_regression PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_alpha_coverage_regression PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_alpha_coverage_regression shaders)
+add_test(NAME alpha_coverage_regression COMMAND alloy3d_alpha_coverage_regression
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib ${CMAKE_SOURCE_DIR}/assets/tests/materials)
+set_tests_properties(alpha_coverage_regression PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
 add_executable(alloy3d_wind_regression wind_regression.mm)
 target_include_directories(alloy3d_wind_regression PRIVATE ../functions/internal)
 target_link_libraries(alloy3d_wind_regression PRIVATE Alloy3D::application)

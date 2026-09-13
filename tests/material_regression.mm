@@ -50,8 +50,12 @@ static void Test(Harness &h, const std::filesystem::path &root)
                          Submit(h, unlit, .7);
                           });
   for (size_t i = 0; i < holes.size(); ++i)
+  {
+    if(covered[i] != ((holes[i] & 0xffffff) ? holes[i] : background[i]))
+      std::fprintf(stderr,"mask depth mismatch xy=%zu,%zu covered=%08x holes=%08x background=%08x\n",i%256,i/256,covered[i],holes[i],background[i]);
     Check(covered[i] == ((holes[i] & 0xffffff) ? holes[i] : background[i]),
           "MASK discarded pixels wrote depth or accepted pixels lost depth");
+  }
   Color(Center(h.Run(camera,
                      [&]
                      {

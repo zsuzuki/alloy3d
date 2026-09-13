@@ -40,13 +40,22 @@ using DrawText3DPtr = std::shared_ptr<DrawText3D>;
 struct MetalModelShader final : alloy3d::ModelShader
 {
   std::shared_ptr<const int> owner;
-  id<MTLRenderPipelineState> pipelines[4] = {nil, nil, nil, nil}; // opaque, blend, instances, blend instances
+  id<MTLRenderPipelineState> pipelines[6] = {}; // opaque, blend, instances, blend instances, coverage, coverage instances
   ~MetalModelShader() override
   {
     for (auto pipeline : pipelines)
       [pipeline release];
   }
 };
+
+id<MTLFunction> NewModelFragment(id<MTLLibrary> library, bool coverage, NSError **error)
+{
+  auto values = [[MTLFunctionConstantValues alloc] init];
+  [values setConstantValue:&coverage type:MTLDataTypeBool atIndex:0];
+  auto function = [library newFunctionWithName:@"modelFrag3d" constantValues:values error:error];
+  [values release];
+  return function;
+}
 
 struct DrawModel3D
 {
@@ -60,6 +69,7 @@ struct DrawModel3D
   alloy3d::ModelHighlight3D         highlight;
   alloy3d::ModelTextureTransform3D textureTransform;
   uint32_t maxAnisotropy = 1;
+  bool alphaToCoverage = false;
   float normalStrength = 1;
   bool materialDetail = false;
   alloy3d::ModelTransmission3D transmission;
@@ -81,7 +91,7 @@ struct DrawModel3D
       : model(std::exchange(other.model, nil)), position(other.position), rotation(other.rotation),
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
-        textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), normalStrength(other.normalStrength),
+        textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), alphaToCoverage(other.alphaToCoverage), normalStrength(other.normalStrength),
         materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), wind(other.wind), instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
@@ -91,7 +101,7 @@ struct DrawModel3D
       : DrawModel3D(source.model, offset, count)
   {
     shader = source.shader; parameters = source.parameters; highlight = source.highlight;
-    textureTransform = source.textureTransform; maxAnisotropy = source.maxAnisotropy;
+    textureTransform = source.textureTransform; maxAnisotropy = source.maxAnisotropy; alphaToCoverage = source.alphaToCoverage;
     normalStrength = source.normalStrength; materialDetail = source.materialDetail;
     transmission = source.transmission; coverage = source.coverage; wind = source.wind;
   }
@@ -101,7 +111,7 @@ struct DrawModel3D
         highlight.strength == other.highlight.strength && highlight.shininess == other.highlight.shininess &&
         simd_all(textureTransform.scale == other.textureTransform.scale) &&
         simd_all(textureTransform.offset == other.textureTransform.offset) &&
-        maxAnisotropy == other.maxAnisotropy && normalStrength == other.normalStrength &&
+        maxAnisotropy == other.maxAnisotropy && alphaToCoverage == other.alphaToCoverage && normalStrength == other.normalStrength &&
         wind.strength == other.wind.strength && wind.time == other.wind.time &&
         simd_all(wind.direction == other.wind.direction) && wind.baseHeight == other.wind.baseHeight &&
         wind.tipHeight == other.wind.tipHeight && wind.frequency == other.wind.frequency &&
@@ -217,8 +227,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
 
   id<MTLRenderPipelineState> pipelineState_;
   id<MTLRenderPipelineState> pipelineStateText_;
-  id<MTLRenderPipelineState>                          pipelineStateModel_[2];
-  id<MTLRenderPipelineState>                          pipelineStateModelInstances_[2];
+  id<MTLRenderPipelineState>                          pipelineStateModel_[3];
+  id<MTLRenderPipelineState>                          pipelineStateModelInstances_[3];
   bool transparentBatching_;
   bool frustumCulling_;
   simd_float2 modelCoverage_;
@@ -315,39 +325,47 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   [fragmentFunction release];
 
   vertexFunction   = [library newFunctionWithName:@"modelVert3d"];
-  fragmentFunction = [library newFunctionWithName:@"modelFrag3d"];
+  fragmentFunction = NewModelFragment(library, false, &error);
 
   pipelineDesc.label            = @"PipelineModel3D";
   pipelineDesc.vertexFunction   = vertexFunction;
   pipelineDesc.fragmentFunction = fragmentFunction;
 
-  // OPAQUE/MASK do not blend. BLEND uses straight alpha with no depth writes.
-  for (int blend = 0; blend < 2; ++blend)
+  auto coverageFragment = NewModelFragment(library, true, &error);
+  if (!fragmentFunction || !coverageFragment) throw std::runtime_error("Alloy3D model fragment specialization failed");
+  for (int mode = 0; mode < 3; ++mode)
   {
-    colorAttachment.blendingEnabled             = blend;
-    colorAttachment.sourceAlphaBlendFactor      = MTLBlendFactorOne;
+    bool blend = mode == 1;
+    pipelineDesc.fragmentFunction = mode == 2 ? coverageFragment : fragmentFunction;
+    pipelineDesc.alphaToCoverageEnabled = pipelineDesc.alphaToOneEnabled = sampleCount_ > 1 && mode == 2;
+    colorAttachment.blendingEnabled = blend;
+    colorAttachment.sourceAlphaBlendFactor = MTLBlendFactorOne;
     colorAttachment.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-    pipelineStateModel_[blend] = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc
-                                                                         error:&error];
-    auto depth                 = [[MTLDepthStencilDescriptor alloc] init];
-    depth.depthCompareFunction = MTLCompareFunctionLess;
-    depth.depthWriteEnabled    = !blend;
-    modelDepth_[blend]         = [device_ newDepthStencilStateWithDescriptor:depth];
-    [depth release];
+    pipelineStateModel_[mode] = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
+    if (!pipelineStateModel_[mode]) throw std::runtime_error("Alloy3D model pipeline creation failed");
+    if (mode < 2)
+    {
+      auto depth = [[MTLDepthStencilDescriptor alloc] init];
+      depth.depthCompareFunction = MTLCompareFunctionLess;
+      depth.depthWriteEnabled = !blend;
+      modelDepth_[mode] = [device_ newDepthStencilStateWithDescriptor:depth];
+      [depth release];
+    }
   }
-  colorAttachment.blendingEnabled = NO;
+  [vertexFunction release];
+  vertexFunction = [library newFunctionWithName:@"modelInstanceVert3d"];
+  pipelineDesc.vertexFunction = vertexFunction;
+  for (int mode = 0; mode < 3; ++mode)
+  {
+    pipelineDesc.fragmentFunction = mode == 2 ? coverageFragment : fragmentFunction;
+    pipelineDesc.alphaToCoverageEnabled = pipelineDesc.alphaToOneEnabled = sampleCount_ > 1 && mode == 2;
+    colorAttachment.blendingEnabled = mode == 1;
+    pipelineStateModelInstances_[mode] = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
+    if (!pipelineStateModelInstances_[mode]) throw std::runtime_error("Alloy3D instance pipeline creation failed");
+  }
   [vertexFunction release];
   [fragmentFunction release];
-  vertexFunction               = [library newFunctionWithName:@"modelInstanceVert3d"];
-  pipelineDesc.label           = @"PipelineModelInstances3D";
-  pipelineDesc.vertexFunction  = vertexFunction;
-  for (int blend = 0; blend < 2; ++blend)
-  {
-    colorAttachment.blendingEnabled = blend;
-    pipelineStateModelInstances_[blend] = [device_ newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
-    if (!pipelineStateModelInstances_[blend]) throw std::runtime_error("Alloy3D instance pipeline creation failed");
-  }
-  [vertexFunction release];
+  [coverageFragment release];
 
   [pipelineDesc release];
   auto shadowDesc                          = [[MTLRenderPipelineDescriptor alloc] init];
@@ -418,18 +436,23 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     descriptor.rasterSampleCount = sampleCount_;
     descriptor.depthAttachmentPixelFormat   = depthFormat_;
     descriptor.stencilAttachmentPixelFormat = depthFormat_;
-    descriptor.fragmentFunction       = [[library newFunctionWithName:@"modelFrag3d"] autorelease];
+    auto baseFragment = [NewModelFragment(library, false, &error) autorelease];
+    auto coverageFragment = [NewModelFragment(library, true, &error) autorelease];
+    if (!baseFragment || !coverageFragment)
+    { diagnostics = error ? error.localizedDescription.UTF8String : "Model specialization failed"; return {}; }
     auto color                        = descriptor.colorAttachments[0];
     color.pixelFormat                 = colorFormat_;
     color.sourceRGBBlendFactor        = MTLBlendFactorSourceAlpha;
     color.destinationRGBBlendFactor   = MTLBlendFactorOneMinusSourceAlpha;
     color.sourceAlphaBlendFactor      = MTLBlendFactorOne;
     color.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 6; ++i)
     {
       descriptor.vertexFunction = [[library
-          newFunctionWithName:i >= 2 ? @"modelInstanceVert3d" : @"modelVert3d"] autorelease];
-      color.blendingEnabled     = (i % 2) == 1;
+          newFunctionWithName:(i == 2 || i == 3 || i == 5) ? @"modelInstanceVert3d" : @"modelVert3d"] autorelease];
+      descriptor.fragmentFunction = i >= 4 ? coverageFragment : baseFragment;
+      descriptor.alphaToCoverageEnabled = descriptor.alphaToOneEnabled = sampleCount_ > 1 && i >= 4;
+      color.blendingEnabled = i == 1 || i == 3;
       shader->pipelines[i] = [device_ newRenderPipelineStateWithDescriptor:descriptor error:&error];
       if (!shader->pipelines[i])
       {
@@ -589,10 +612,10 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   [textTextureCache_ release];
   [pipelineState_ release];
   [pipelineStateText_ release];
-  for (int blend = 0; blend < 2; ++blend)
+  for (int blend = 0; blend < 3; ++blend)
   {
     [pipelineStateModel_[blend] release];
-    [modelDepth_[blend] release];
+    if (blend < 2) [modelDepth_[blend] release];
   }
   for (auto pipeline : pipelineStateModelInstances_) [pipeline release];
   [whiteTexture_ release];
@@ -1282,6 +1305,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   drawModelList_.back().highlight = modelHighlight_;
   drawModelList_.back().textureTransform = modelTextureTransform_;
   drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
+  drawModelList_.back().alphaToCoverage = modelTextureSampling_.alphaToCoverage;
   drawModelList_.back().normalStrength = modelNormalMapping_.strength;
   drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
   drawModelList_.back().transmission = modelTransmission_;
@@ -1319,6 +1343,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       drawModelList_.back().highlight = modelHighlight_;
       drawModelList_.back().textureTransform = modelTextureTransform_;
       drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
+  drawModelList_.back().alphaToCoverage = modelTextureSampling_.alphaToCoverage;
       drawModelList_.back().normalStrength = modelNormalMapping_.strength;
       drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
       drawModelList_.back().transmission = modelTransmission_;
@@ -1337,6 +1362,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     drawModelList_.back().highlight = modelHighlight_;
     drawModelList_.back().textureTransform = modelTextureTransform_;
     drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
+  drawModelList_.back().alphaToCoverage = modelTextureSampling_.alphaToCoverage;
     drawModelList_.back().normalStrength = modelNormalMapping_.strength;
     drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
     drawModelList_.back().transmission = modelTransmission_;
@@ -1441,9 +1467,11 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       {
         [renderEncoder setFragmentSamplerState:[self modelSampler:dmodel.maxAnisotropy] atIndex:0];
         const bool instanced = dmodel.instanceCount != 0;
+        const bool coverage = part.alphaMode == 1 && dmodel.alphaToCoverage && sampleCount_ > 1 && !blend;
+        const int mode = coverage ? 2 : int(blend);
         auto       pipeline =
-            dmodel.shader ? dmodel.shader->pipelines[instanced ? 2 + int(blend) : int(blend)]
-                          : (instanced ? pipelineStateModelInstances_[blend] : pipelineStateModel_[blend]);
+            dmodel.shader ? dmodel.shader->pipelines[coverage ? (instanced ? 5 : 4) : instanced ? 2 + int(blend) : int(blend)]
+                          : (instanced ? pipelineStateModelInstances_[mode] : pipelineStateModel_[mode]);
         [renderEncoder setRenderPipelineState:pipeline];
         if (dmodel.shader)
           [renderEncoder setFragmentBytes:&dmodel.parameters
