@@ -48,7 +48,7 @@ typedef struct
   simd_float4     lightColorAndDiffuse;
   simd_float4     modelColor;
   matrix_float4x4 shadowTransform;  // view space -> light clip space
-  simd_float4     shadowParameters; // enabled, depth bias, reserved, reserved
+  simd_float4     shadowParameters; // enabled, depth bias, filter radius, inverse map size
   simd_float4     fogColorAndEnabled;
   simd_float4     fogParameters; // start, 1/(end-start), reserved, reserved
   simd_float4     heightFogColorDensity;

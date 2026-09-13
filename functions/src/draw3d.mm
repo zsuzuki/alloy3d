@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 #include <alloy3d/visibility.h>
+#include <alloy3d/shadow_camera.h>
 
 namespace
 {
@@ -187,28 +188,6 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                      simd_make_float4(axisY * scale.y, 0.0f),
                      simd_make_float4(axisZ * scale.z, 0.0f),
                      simd_make_float4(position.x, position.y, position.z, 1.0f));
-}
-alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settings,
-                                      simd_float3                         direction)
-{
-  if (!settings.bounds.isValid() || settings.resolution < 64 || settings.resolution > 4096 ||
-      !std::isfinite(settings.depthBias) || settings.depthBias < 0 || settings.depthBias > .1f ||
-      !std::isfinite(settings.slopeScale) || settings.slopeScale < 0 || settings.slopeScale > 8)
-    throw std::invalid_argument("Alloy3D shadow requires finite bounds, resolution 64..4096, bias "
-                                "0..0.1 and slope scale 0..8");
-  const auto  center = settings.bounds.min * .5f + settings.bounds.max * .5f;
-  const float radius =
-      std::max(.01f, simd_length(settings.bounds.max * .5f - settings.bounds.min * .5f));
-  alloy3d::CameraData camera;
-  camera.buildModelView(center - direction * (radius * 2 + 1), center, {0, 1, 0});
-  const auto  bounds = settings.bounds.transformed(camera.getModelViewMatrix());
-  const float extent = std::max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y);
-  const float margin = std::max(.01f, radius * .05f);
-  camera.buildOrthographic(std::max(.01f, extent * 1.05f),
-                           1,
-                           std::max(.001f, -bounds.max.z - margin),
-                           -bounds.min.z + margin);
-  return camera;
 }
 
 } // namespace
@@ -1054,7 +1033,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       wide                  = simd_normalize(wide);
       const auto normalized = simd_make_float3(wide.x, wide.y, wide.z);
       if (shadowSettings_.enabled)
-        BuildShadowCamera(shadowSettings_, normalized);
+        alloy3d::BuildDirectionalShadowCamera3D(shadowSettings_, normalized);
       lightDirection_ = normalized;
     }
   }
@@ -1078,7 +1057,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   direction             = simd_normalize(direction);
   const auto normalized = simd_make_float3(direction.x, direction.y, direction.z);
   if (shadowSettings_.enabled)
-    BuildShadowCamera(shadowSettings_, normalized);
+    alloy3d::BuildDirectionalShadowCamera3D(shadowSettings_, normalized);
   lightDirection_   = normalized;
   lightColor_       = light.color;
   ambientIntensity_ = light.ambient;
@@ -1087,7 +1066,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
 
 - (void)setDirectionalShadow:(const alloy3d::DirectionalShadow3D &)settings
 {
-  BuildShadowCamera(settings, lightDirection_); // validate before changing live settings
+  alloy3d::BuildDirectionalShadowCamera3D(settings, lightDirection_); // validate before changing live settings
   shadowSettings_ = settings;
 }
 
@@ -1210,7 +1189,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     [map release];
     map = replacement;
   }
-  auto lightCamera = BuildShadowCamera(shadowSettings_, lightDirection_);
+  auto lightCamera = alloy3d::BuildDirectionalShadowCamera3D(shadowSettings_, lightDirection_);
   lightViewProjection_ =
       simd_mul(lightCamera.getProjectionMatrix(), lightCamera.getModelViewMatrix());
   const auto view = camera->getModelViewMatrix();
@@ -1405,7 +1384,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     uniform->shadowTransform = shadowReady_ ? simd_mul(lightViewProjection_, simd_inverse(mdlview))
                                             : matrix_identity_float4x4;
     uniform->shadowParameters =
-        simd_make_float4(shadowReady_ ? 1 : 0, shadowSettings_.depthBias, 0, 0);
+        simd_make_float4(shadowReady_ ? 1 : 0, shadowSettings_.depthBias, shadowSettings_.filterRadius, 1.f/shadowSettings_.resolution);
     uniform->fogColorAndEnabled = simd_make_float4(fogSettings_.color, float(fogSettings_.enabled));
     uniform->fogParameters = simd_make_float4(fogSettings_.start, fogInverseRange_, 0, 0);
     uniform->heightFogColorDensity = simd_make_float4(heightFogSettings_.color,

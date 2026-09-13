@@ -73,5 +73,7 @@ struct DirectionalShadow3D
   float depthBias = .001f;
   // Caster slope bias, [0,8]; 0 disables. Internal normalized depth clamp is 0.01.
   float slopeScale = 2.0f;
+  float filterRadius = 0; // 0: hardware PCF; (0,4]: 3x3 PCF radius in texels.
+  bool stabilize = false; // Snap light-space center to the shadow texel grid.
 };
 } // namespace alloy3d

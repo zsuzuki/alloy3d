@@ -158,6 +158,12 @@ int main(int argc, char **argv)
         std::printf("transparent batching: %lu -> %lu model draws\n", (unsigned long)scalarDraws, (unsigned long)batchedDraws);
         [h.draw setTransparentBatching:true];
         [h.draw setFrustumCulling:true];
+        scene.settings.softShadows = false;
+        [h.draw setDirectionalShadow:scene.Shadow()];
+        Check(first != render(0), "soft shadow filtering did not affect forest");
+        scene.settings.softShadows = true;
+        [h.draw setDirectionalShadow:scene.Shadow()];
+        Check(first == render(0), "soft shadow toggle did not restore forest");
         scene.settings.normalMaps = false;
         auto noNormals = render(0);
         Check(first != noNormals, "forest normal maps did not affect lighting");

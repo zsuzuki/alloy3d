@@ -112,3 +112,14 @@ GPUが使っている頂点・ジョイント・深度マップのページをCP
 
 参考: Appleの[深度比較サンプラー](https://developer.apple.com/documentation/metal/mtlsamplerdescriptor/comparefunction)と
 [シャドウマップを使う描画サンプル](https://developer.apple.com/documentation/metal/rendering-a-scene-with-deferred-lighting-in-c%2B%2B)。
+
+## PCFと安定化
+
+`DirectionalShadow3D.filterRadius` は影テクセル単位の半径です。0は従来のハードウェア比較フィルタ、
+0より大きい値は3×3の9点PCFです。範囲は0〜4で、影マップの外を照らされた領域として扱います。
+`stabilize=true` はライト空間の中心をテクセルへ揃え、同じ大きさの影範囲が移動するときの細かなちらつきを抑えます。
+範囲の大きさや光の向きを変えたときまで固定するものではありません。
+`BuildDirectionalShadowCamera3D(settings, direction)` で同じカメラをアプリ側でも取得できます。
+
+forestは半径1.25と安定化を使用します。`K` はPCFのみ、`H` は影全体の切替です。
+`shadow_regression` は境界の平滑化、影内部、無効時の一致、サブテクセルの移動、入力検証を追加しています。
