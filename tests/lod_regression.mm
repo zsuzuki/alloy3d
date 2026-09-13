@@ -59,7 +59,8 @@ int main(int argc,char **argv)
         [h.draw setDirectionalShadow:shadow];
         Instance base{{-.3f,0,1},{},{.6f,.6f,.6f},{1,1,1,1}};
         auto submit=[&](std::span<const Instance> instances){
-          [h.draw drawPlane:{-2,-2,0} p1:{2,-2,0} p2:{2,2,0} p3:{-2,2,0} color:{1,1,1,1}];
+          [h.draw drawTriangle:{-2,-2,0} p1:{2,-2,0} p2:{2,2,0} color:{1,1,1,1}];
+          [h.draw drawTriangle:{-2,-2,0} p1:{2,2,0} p2:{-2,2,0} color:{1,1,1,1}];
           [h.draw drawModelInstances:caster instances:instances];
         };
         auto full=h.Run(camera,[&]{submit(std::span(&base,1));});

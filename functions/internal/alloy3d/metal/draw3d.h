@@ -6,6 +6,7 @@
 #include <alloy3d/lighting.h>
 #import <alloy3d/metal/model.h>
 #include <alloy3d/model_instance.h>
+#include <alloy3d/model_wind.h>
 #include <alloy3d/model_shader.h>
 #include <alloy3d/model_texture.h>
 #include <alloy3d/render_memory.h>
@@ -21,6 +22,7 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
 };
 
 @interface Draw3D : NSObject
+- (void)setModelWind:(const alloy3d::ModelWind3D &)wind;
 - (void)setModelCoverage:(simd_float2)interval;
 - (void)setFrustumCulling:(bool)enabled;
 - (void)setTransparentBatching:(bool)enabled;

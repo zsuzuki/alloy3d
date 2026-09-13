@@ -92,6 +92,21 @@ float3 UnitModelNormal(float3 normal)
   return magnitude > 0.0 && isfinite(magnitude) ? normal / magnitude : float3(0.0);
 }
 
+// Deform after skinning, before placement. Analytic Jacobian keeps normals/tangents coherent.
+void BendModelWind(thread float4 &position, thread float3 &normal, thread float3 &tangent,
+                   constant MaterialUniforms &material, float phase)
+{
+  if (material.wind.z <= 0) return;
+  float height = (position.y-material.windShape.x)*material.windShape.y;
+  float u = saturate(height);
+  float wave = (sin(material.wind.w+phase)+.35f*sin(material.wind.w*1.7777778f+phase*1.7f))/1.35f;
+  float2 offset = material.wind.xy * (material.wind.z*wave);
+  position.xz += offset*u*u;
+  float2 slope = height > 0 && height < 1 ? offset*(2*u*material.windShape.y) : float2(0);
+  normal.y -= dot(slope,normal.xz);
+  tangent.xz += slope*tangent.y;
+}
+
 vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
                        device const Uniforms          &cameraData [[buffer(1)]],
                        device const float4x4          *jointMatrices [[buffer(3)]],
@@ -105,6 +120,7 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   float                           orientation;
   float3 tangent;
   SkinVertex(vd, jointMatrices, position, normal, orientation, tangent);
+  BendModelWind(position, normal, tangent, material, material.windShape.z);
   o.position   = cameraData.perspectiveTransform * cameraData.worldTransform * position;
   o.viewDepth  = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * position).z : 0;
   // Custom surfaces need view position even with highlights disabled or unlit materials.
@@ -144,6 +160,7 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   float                               orientation;
   float3 tangent;
   SkinVertex(vd, jointMatrices, position, normal, orientation, tangent);
+  BendModelWind(position, normal, tangent, material, instance.windPhase);
   o.position   = cameraData.perspectiveTransform * instance.modelView * position;
   o.viewDepth  = cameraData.fogColorAndEnabled.w != 0 ? -(instance.modelView * position).z : 0;
   // Custom surfaces need view position even with highlights disabled or unlit materials.

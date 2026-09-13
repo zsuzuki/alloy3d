@@ -8,7 +8,7 @@ import zlib
 
 KINDS = ('opaque_alpha', 'mask_checker', 'mask_cutoff', 'mask_equal', 'blend_red',
          'blend_blue', 'blend_parts', 'single_sided', 'double_sided', 'unlit',
-         'mirrored_node', 'mirrored_skin', 'animated_blend', 'animated_caster', 'blend_lit')
+         'mirrored_node', 'mirrored_skin', 'animated_blend', 'animated_caster', 'blend_lit', 'wind_strip')
 
 
 def generate(kind):
@@ -100,6 +100,14 @@ def generate(kind):
             doc['animations'] = [dict(name='Depth',samplers=[dict(input=accessor([0,1,2],1),
                 output=accessor([0,0,.2, 0,0,.8, 0,0,.2],3), interpolation='LINEAR')],
                 channels=[dict(sampler=0,target=dict(node=1,path='translation'))])]
+    if kind == 'wind_strip':
+        # Grid includes Y=0 so the fixed lower half does not interpolate across a bend.
+        points = [(x, -.5 + row/12, 0) for row in range(13) for x in (-.3,.3)]
+        attrs['POSITION'] = accessor([v for p in points for v in p],3)
+        attrs['NORMAL'] = accessor([0,0,1]*len(points),3)
+        attrs['TEXCOORD_0'] = accessor([v for x,y,z in points for v in ((x+.3)/.6,y+.5)],2)
+        prims[0]['indices'] = accessor([i for row in range(12) for i in
+            (row*2,row*2+1,row*2+3,row*2,row*2+3,row*2+2)],1,'H')
     doc['buffers'] = [dict(byteLength=len(binary))]
     payload = json.dumps(doc,separators=(',',':')).encode()
     payload += b' ' * (-len(payload)%4)

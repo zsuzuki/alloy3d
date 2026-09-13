@@ -69,6 +69,8 @@ struct MaterialUniforms
   simd_float4 surfaceDetail; // enabled, roughness factor, AO strength, texture flags
   simd_float4 transmission; // RGB tint, strength
   simd_float2 coverage; // dither interval
+  simd_float4 wind; // direction XZ, strength, time * frequency
+  simd_float4 windShape; // base height, inverse height range, placement phase, reserved
 };
 
 struct ModelInstanceUniforms
@@ -77,6 +79,7 @@ struct ModelInstanceUniforms
   matrix_float3x3 normalTransform;
   simd_float4     color;
   simd_float2     coverage;
+  float          windPhase;
 };
 
 typedef struct

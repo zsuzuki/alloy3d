@@ -4,6 +4,7 @@
 #include <alloy3d/lighting.h>
 #include <alloy3d/lod.h>
 #include <alloy3d/model_instance.h>
+#include <alloy3d/model_wind.h>
 #include <alloy3d/model_texture.h>
 #include <array>
 #include <cmath>
@@ -402,13 +403,6 @@ public:
         auto &p     = live_[asset][i];
         p           = base_[asset][i];
         float phase = p.position.x * .65f + p.position.z * .38f + float(i) * .73f;
-        if (settings.wind && asset != Mote)
-        {
-          float amplitude = asset == Grass ? .10f : asset == Fern ? .045f : .008f;
-          p.rotation.z    = amplitude * (std::sin(time * 1.35f + phase) +
-                                         .35f * std::sin(time * 2.4f + phase * 1.7f));
-          p.rotation.x    = amplitude * .5f * std::sin(time * 1.1f + phase + .8f);
-        }
         if (asset == Mote)
         {
           p.position.x += .24f * std::sin(time * .23f + phase);
@@ -547,6 +541,21 @@ public:
     shadow.bounds     = {{-32, -2, -64}, {32, 24, 24}};
     shadow.depthBias  = .0005f;
     return shadow;
+  }
+  alloy3d::ModelWind3D Wind(size_t asset) const
+  {
+    alloy3d::ModelWind3D wind;
+    wind.time = time;
+    if (!settings.wind) return wind;
+    if (asset == Grass || asset == Fern)
+    {
+      wind.strength = asset == Grass ? .10f : .08f;
+      wind.tipHeight = asset == Grass ? 1.f : 1.5f;
+    }
+    for (size_t v=0;v<3;++v)
+      if (asset == Crowns[v] || asset == Foliage[v] || asset == DistantCrowns[v] || asset == DistantFoliage[v] || IsBillboard(asset))
+      { wind.strength = .22f; wind.tipHeight = 12; }
+    return wind;
   }
   alloy3d::ModelTextureTransform3D TextureTransform(size_t asset) const
   {

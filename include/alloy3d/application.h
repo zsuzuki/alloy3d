@@ -7,6 +7,7 @@
 #include <alloy3d/lighting.h>
 #include <alloy3d/model.h>
 #include <alloy3d/model_instance.h>
+#include <alloy3d/model_wind.h>
 #include <alloy3d/model_shader.h>
 #include <alloy3d/model_texture.h>
 #include <alloy3d/render_memory.h>
@@ -96,6 +97,7 @@ public:
   virtual bool SetModelMaterialDetail3D(const ModelMaterialDetail3D &detail) { return false; }
   virtual bool SetModelTransmission3D(const ModelTransmission3D &transmission) { return false; }
   // Per-draw dither interval, default [0,1]. Instances provide their own interval.
+  virtual bool SetModelWind3D(const ModelWind3D &wind) { return false; }
   virtual bool SetModelCoverage3D(simd_float2 interval) { return false; }
   // Frame-level conservative color-pass culling. Shadow casters remain submitted.
   virtual bool SetFrustumCulling3D(bool enabled) { return false; }

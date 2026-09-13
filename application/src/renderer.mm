@@ -324,6 +324,11 @@ public:
     return true;
   }
 
+  bool SetModelWind3D(const alloy3d::ModelWind3D &wind) override
+  {
+    [draw3d_ setModelWind:wind];
+    return true;
+  }
   bool SetModelCoverage3D(simd_float2 interval) override
   {
     [draw3d_ setModelCoverage:interval];

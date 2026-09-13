@@ -64,6 +64,7 @@ struct DrawModel3D
   bool materialDetail = false;
   alloy3d::ModelTransmission3D transmission;
   simd_float2 coverage = {0,1};
+  alloy3d::ModelWind3D wind;
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -81,7 +82,7 @@ struct DrawModel3D
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
         textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), normalStrength(other.normalStrength),
-        materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), instanceOffset(other.instanceOffset),
+        materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), wind(other.wind), instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
   }
@@ -92,7 +93,7 @@ struct DrawModel3D
     shader = source.shader; parameters = source.parameters; highlight = source.highlight;
     textureTransform = source.textureTransform; maxAnisotropy = source.maxAnisotropy;
     normalStrength = source.normalStrength; materialDetail = source.materialDetail;
-    transmission = source.transmission; coverage = source.coverage;
+    transmission = source.transmission; coverage = source.coverage; wind = source.wind;
   }
   bool sameStyle(const DrawModel3D &other) const
   {
@@ -101,10 +102,33 @@ struct DrawModel3D
         simd_all(textureTransform.scale == other.textureTransform.scale) &&
         simd_all(textureTransform.offset == other.textureTransform.offset) &&
         maxAnisotropy == other.maxAnisotropy && normalStrength == other.normalStrength &&
+        wind.strength == other.wind.strength && wind.time == other.wind.time &&
+        simd_all(wind.direction == other.wind.direction) && wind.baseHeight == other.wind.baseHeight &&
+        wind.tipHeight == other.wind.tipHeight && wind.frequency == other.wind.frequency &&
         materialDetail == other.materialDetail && transmission.strength == other.transmission.strength &&
         simd_all(transmission.color == other.transmission.color);
   }
 };
+
+float WindPhase(simd_float3 position)
+{
+  return position.x*.65f + position.z*.38f;
+}
+void SetWindUniforms(MaterialUniforms &material, const DrawModel3D &draw)
+{
+  material.wind = {draw.wind.direction.x, draw.wind.direction.y, draw.wind.strength, draw.wind.time*draw.wind.frequency};
+  material.windShape = {draw.wind.baseHeight, 1.f/(draw.wind.tipHeight-draw.wind.baseHeight), WindPhase(draw.position), 0};
+}
+alloy3d::Bounds3D WindBounds(alloy3d::Bounds3D bounds, const alloy3d::ModelWind3D &wind)
+{
+  if (bounds.isValid() && wind.strength > 0)
+  {
+    auto expansion = simd_make_float3(std::abs(wind.direction.x)*wind.strength, 0,
+                                     std::abs(wind.direction.y)*wind.strength);
+    bounds.min -= expansion; bounds.max += expansion;
+  }
+  return bounds;
+}
 
 struct TransparentPart
 {
@@ -198,6 +222,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   bool transparentBatching_;
   bool frustumCulling_;
   simd_float2 modelCoverage_;
+  alloy3d::ModelWind3D modelWind_;
   id<MTLDepthStencilState>                            modelDepth_[2];
   std::vector<TransparentPart>                        transparentParts_;
   id<MTLBuffer>              uniformBuffer_[3];
@@ -1057,6 +1082,22 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   fogInverseRange_ = inverseRange;
 }
 
+- (void)setModelWind:(const alloy3d::ModelWind3D &)wind
+{
+  if (!std::isfinite(wind.strength) || wind.strength < 0 || wind.strength > 10 ||
+      !std::isfinite(wind.time) || !simd_all(simd_abs(wind.direction) < INFINITY) ||
+      !std::isfinite(wind.baseHeight) || !std::isfinite(wind.tipHeight) || wind.tipHeight <= wind.baseHeight ||
+      !std::isfinite(1.f/(wind.tipHeight-wind.baseHeight)) ||
+      !std::isfinite(wind.frequency) || wind.frequency < 0 || wind.frequency > 100 ||
+      !std::isfinite(wind.time*wind.frequency))
+    throw std::invalid_argument("Alloy3D wind requires finite parameters, strength in [0,10], frequency in [0,100], tip above base");
+  auto direction = simd_make_double2(wind.direction.x,wind.direction.y);
+  if (simd_length_squared(direction) == 0) throw std::invalid_argument("Alloy3D wind direction is zero");
+  direction = simd_normalize(direction);
+  modelWind_ = wind;
+  modelWind_.direction = simd_make_float2(direction.x,direction.y);
+}
+
 - (void)setModelCoverage:(simd_float2)interval
 {
   if (!simd_all(interval >= 0) || !simd_all(interval <= 1) || interval.x > interval.y)
@@ -1115,6 +1156,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     target.normalTransform = alloy3d::metal::NormalMatrix(target.modelView);
     target.color           = source.color;
     target.coverage        = source.coverage;
+    target.windPhase       = WindPhase(source.position);
   }
   instancesPrepared_ = true;
 }
@@ -1199,6 +1241,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
           {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)},
           {}, simd_make_float4(draw.textureTransform.scale, draw.textureTransform.offset)};
       material.coverage = draw.coverage;
+      SetWindUniforms(material, draw);
       [encoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
       [encoder setFragmentBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
       [encoder setVertexBuffer:[part vertexBufferForPage:pageIndex_] offset:0 atIndex:0];
@@ -1242,6 +1285,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   drawModelList_.back().normalStrength = modelNormalMapping_.strength;
   drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
   drawModelList_.back().transmission = modelTransmission_;
+  drawModelList_.back().wind = modelWind_;
   drawModelList_.back().coverage = modelCoverage_;
 }
 
@@ -1278,6 +1322,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       drawModelList_.back().normalStrength = modelNormalMapping_.strength;
       drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
       drawModelList_.back().transmission = modelTransmission_;
+  drawModelList_.back().wind = modelWind_;
       drawModelList_.back().coverage = i.coverage;
     }
     return;
@@ -1295,6 +1340,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     drawModelList_.back().normalStrength = modelNormalMapping_.strength;
     drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
     drawModelList_.back().transmission = modelTransmission_;
+  drawModelList_.back().wind = modelWind_;
   }
   catch (...)
   {
@@ -1416,6 +1462,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
                                   float((part.roughnessTexture ? 1 : 0) | (part.occlusionTexture ? 2 : 0))};
         material.transmission = simd_make_float4(dmodel.transmission.color, dmodel.transmission.strength);
         material.coverage = dmodel.coverage;
+        SetWindUniforms(material, dmodel);
         [renderEncoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
         [renderEncoder setFragmentBytes:&material
                                  length:sizeof(material)
@@ -1467,7 +1514,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
         {
           if (frustumCulling_)
           {
-            const auto bounds = part.renderBounds;
+            const auto bounds = WindBounds(part.renderBounds, dmodel.wind);
             if (dmodel.instanceCount)
             {
               visible.clear();
@@ -1526,6 +1573,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
           instances[i].normalTransform = alloy3d::metal::NormalMatrix(instances[i].modelView);
           instances[i].color = source.color;
           instances[i].coverage = source.coverage;
+          instances[i].windPhase = WindPhase(source.position);
         }
       }
       for (size_t first = 0; first < transparentParts_.size();)

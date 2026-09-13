@@ -120,6 +120,7 @@ int main(int argc, char **argv)
                         return;
                       if (dropsOnly && asset != forest::Droplet)
                         return;
+                      [h.draw setModelWind:scene.Wind(asset)];
                       [h.draw setModelTextureTransform:scene.TextureTransform(asset)];
                       [h.draw setModelTransmission:(alloy3d::ModelTransmission3D{scene.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
                                                                                 {.75f, 1.f, .4f}})];
