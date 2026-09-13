@@ -337,6 +337,11 @@ public:
     if(!post_)return false;
     post_->set(settings);return true;
   }
+  bool SetModelScreenSpace3D(const alloy3d::ModelScreenSpace3D &settings) override
+  {
+    if(!post_ || !post_->sceneEffects())return false;
+    [draw3d_ setModelScreenSpace:settings];return true;
+  }
   bool SetModelSoftParticles3D(float distance) override
   {
     if(!post_ || !post_->sceneEffects())return false;

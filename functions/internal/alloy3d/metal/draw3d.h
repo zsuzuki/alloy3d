@@ -6,6 +6,7 @@
 #include <alloy3d/lighting.h>
 #import <alloy3d/metal/model.h>
 #include <alloy3d/model_instance.h>
+#include <alloy3d/model_screen_space.h>
 #include <alloy3d/model_wind.h>
 #include <alloy3d/model_shader.h>
 #include <alloy3d/model_texture.h>
@@ -25,6 +26,7 @@ enum class ScenePhase { All, Opaque, Transparent };
 
 @interface Draw3D : NSObject
 - (alloy3d::ModelShaderPtr)createModelMaterialShader:(std::string_view)source diagnostics:(std::string &)diagnostics;
+- (void)setModelScreenSpace:(const alloy3d::ModelScreenSpace3D &)settings;
 - (void)setModelSoftParticles:(float)distance;
 - (void)setSceneColor:(nullable id<MTLTexture>)color depth:(nullable id<MTLTexture>)depth;
 - (void)render:(nullable id<MTLRenderCommandEncoder>)encoder camera:(nonnull alloy3d::CameraData *)camera phase:(ScenePhase)phase;

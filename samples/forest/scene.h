@@ -1,4 +1,5 @@
 #pragma once
+#include <alloy3d/model_screen_space.h>
 #include <algorithm>
 #include <alloy3d/camera.h>
 #include <alloy3d/lighting.h>
@@ -169,7 +170,7 @@ struct Settings
 {
   bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
        flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true,
-       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true, shadowLod = true, softParticles = true;
+       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true, shadowLod = true, softParticles = true, screenWater = true;
 };
 
 class Scene
@@ -559,6 +560,10 @@ public:
     if (asset == Water)
       return {{1, 1}, {0, -std::fmod(waterTime * .155f, 1.f)}};
     return {};
+  }
+  alloy3d::ModelScreenSpace3D ScreenSpace(size_t asset) const
+  {
+    return asset==Water && settings.screenWater ? alloy3d::ModelScreenSpace3D{.65f,10,1,24,.75f} : alloy3d::ModelScreenSpace3D{};
   }
   float SoftParticles(size_t asset) const
   {

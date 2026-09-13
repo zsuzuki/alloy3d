@@ -69,6 +69,8 @@ struct MaterialUniforms
   simd_float4 normalMapping; // enabled, scale, reserved, reserved
   simd_float4 surfaceDetail; // enabled, roughness factor, AO strength, texture flags
   simd_float4 transmission; // RGB tint, strength
+  simd_float4 screenSurface; // refraction, pixel offset, reflection, ray distance
+  float screenThickness;
   float softDistance;
   simd_float2 coverage; // dither interval
   simd_float4 wind; // direction XZ, strength, time * frequency

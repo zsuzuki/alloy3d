@@ -92,6 +92,7 @@ public:
           case Key::N: s.normalMaps = !s.normalMaps; break;
           case Key::M: s.materialDetail = !s.materialDetail; break;
           case Key::T: s.transmission = !s.transmission; break;
+          case Key::E: s.screenWater = !s.screenWater; break;
           case Key::C: s.softParticles = !s.softParticles; break;
           case Key::U: s.shadowLod = !s.shadowLod; break;
           case Key::L: s.bloom = !s.bloom; break;
@@ -164,6 +165,7 @@ public:
         {
           ctx.SetModelVisibility3D({true,scene_.CastShadow(asset)});
           ctx.SetModelSoftParticles3D(scene_.SoftParticles(asset));
+          ctx.SetModelScreenSpace3D(scene_.ScreenSpace(asset));
           ctx.SetModelWind3D(scene_.Wind(asset));
           ctx.SetModelTextureTransform3D(scene_.TextureTransform(asset));
           ctx.SetModelTransmission3D({scene_.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
@@ -184,6 +186,7 @@ public:
                                    48});
           ctx.DrawModelInstances3D(models_[asset], instances);
         });
+    ctx.SetModelScreenSpace3D({});
     ctx.SetModelSoftParticles3D(0);
     ctx.SetModelVisibility3D({false,true});
     ctx.SetModelShader(nullptr);ctx.SetModelTextureTransform3D({});

@@ -127,7 +127,7 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   // Custom surfaces need view position even with highlights disabled or unlit materials.
 #ifndef ALLOY3D_CUSTOM_SURFACE
   if ((material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0) ||
-      material.normalMapping.x != 0 || material.transmission.w > 0 || material.softDistance > 0 || cameraData.heightFogColorDensity.w > 0)
+      material.normalMapping.x != 0 || material.transmission.w > 0 || material.softDistance > 0 || material.screenSurface.x>0 || material.screenSurface.z>0 || cameraData.heightFogColorDensity.w > 0)
 #endif
     o.viewPosition = (cameraData.worldTransform * position).xyz;
   o.normal     = UnitModelNormal(cameraData.worldNormalTransform * normal);
@@ -167,7 +167,7 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   // Custom surfaces need view position even with highlights disabled or unlit materials.
 #ifndef ALLOY3D_CUSTOM_SURFACE
   if ((material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0) ||
-      material.normalMapping.x != 0 || material.transmission.w > 0 || material.softDistance > 0 || cameraData.heightFogColorDensity.w > 0)
+      material.normalMapping.x != 0 || material.transmission.w > 0 || material.softDistance > 0 || material.screenSurface.x>0 || material.screenSurface.z>0 || cameraData.heightFogColorDensity.w > 0)
 #endif
     o.viewPosition = (instance.modelView * position).xyz;
   o.normal     = UnitModelNormal(instance.normalTransform * normal);
@@ -219,6 +219,47 @@ inline void ApplyModelCoverage(float2 pixel, float2 interval)
   if (threshold < interval.x || threshold >= interval.y) discard_fragment();
 }
 
+inline half3 SceneSurfaceColor(half3 color,float2 pixel,float3 position,float3 normal,
+    constant MaterialUniforms &m,device const Uniforms &camera,texture2d<half> scene,texture2d<float> depth)
+{
+  constexpr sampler linearSampler(coord::normalized,address::clamp_to_edge,filter::linear);
+  constexpr sampler depthSampler(coord::normalized,address::clamp_to_edge,filter::nearest);
+  float2 uv=pixel*camera.sceneParameters.yz;
+  float ownDepth=position.z*camera.sceneParameters.w;
+  if(m.screenSurface.x>0)
+  {
+    float2 offset=uv+float2(normal.x,-normal.y)*m.screenSurface.y*camera.sceneParameters.yz;
+    // Reject foreground objects and offscreen displacement; use the undistorted background.
+    if(any(offset<0) || any(offset>1) || depth.sample(depthSampler,offset).r<ownDepth-.001f)offset=uv;
+    color=mix(color,scene.sample(linearSampler,offset).rgb,half(m.screenSurface.x));
+  }
+  if(m.screenSurface.z>0 && dot(normal,normal)>.5f)
+  {
+    float3 incident=camera.heightFogParameters.w>0 ? normalize(position) : float3(0,0,camera.sceneParameters.w);
+    float3 ray=reflect(incident,normal),origin=position+normal*.025f;
+    float previous=0;
+    for(uint i=1;i<=32;++i)
+    {
+      float distance=m.screenSurface.w*float(i)/32.f;
+      float3 point=origin+ray*distance;
+      float4 clip=camera.perspectiveTransform*float4(point,1);
+      if(clip.w<=0)break;
+      float2 hit=clip.xy/clip.w*float2(.5f,-.5f)+.5f;
+      if(any(hit<=0) || any(hit>=1) || clip.z<0 || clip.z>clip.w)break;
+      float gap=point.z*camera.sceneParameters.w-depth.sample(depthSampler,hit).r;
+      if(gap>=0 && gap<m.screenThickness && previous<=0)
+      {
+        float edge=saturate(min(min(hit.x,1-hit.x),min(hit.y,1-hit.y))*12.f);
+        float fresnel=.02f+.98f*pow(1-saturate(dot(-incident,normal)),5.f);
+        color=mix(color,scene.sample(linearSampler,hit).rgb,half(m.screenSurface.z*fresnel*edge*(1-float(i)/33.f)));
+        break;
+      }
+      previous=gap;
+    }
+  }
+  return color;
+}
+
 fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]],
                            device const Uniforms          &cameraData [[buffer(1)]],
                            constant MaterialUniforms      &material [[buffer(5)]],
@@ -265,7 +306,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   float normalLength = length(in.normal);
   bool  unlit        = material.parameters.w != 0 || normalLength < 0.001;
 #ifndef ALLOY3D_CUSTOM_SURFACE
-  if (unlit)
+  if (unlit && material.screenSurface.x==0 && material.screenSurface.z==0)
     return ApplyFog(baseColor, in.viewDepth, in.viewPosition, cameraData);
 #endif
   float3 n = normalLength >= 0.001 ? in.normal / normalLength : float3(0);
@@ -375,7 +416,10 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                        saturate(cameraData.lightColorAndDiffuse.w), roughness, occlusion, float3(transmissionColor)};
   litColor = half3(alloy3dShade(surface, parameters));
 #endif
-  return ApplyFog(half4(litColor, baseColor.a), in.viewDepth, in.viewPosition, cameraData);
+  half4 output=ApplyFog(half4(litColor, baseColor.a), in.viewDepth, in.viewPosition, cameraData);
+  if(cameraData.sceneParameters.x>0 && (material.screenSurface.x>0 || material.screenSurface.z>0))
+    output.rgb=SceneSurfaceColor(output.rgb,in.position.xy,in.viewPosition,n,material,cameraData,sceneColor,sceneDepth);
+  return output;
 }
 
 vertex v2f textVert3d(device const VertexData3D* vertexData [[buffer(0)]],

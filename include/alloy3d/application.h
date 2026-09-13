@@ -8,6 +8,7 @@
 #include <alloy3d/lighting.h>
 #include <alloy3d/model.h>
 #include <alloy3d/model_instance.h>
+#include <alloy3d/model_screen_space.h>
 #include <alloy3d/model_wind.h>
 #include <alloy3d/model_shader.h>
 #include <alloy3d/model_texture.h>
@@ -108,6 +109,7 @@ public:
   // Available when RenderOptions.hdr was enabled at launch.
   virtual bool SetPostProcessing3D(const PostProcessing3D &settings) { return false; }
   // Fade BLEND surfaces near opaque geometry; world-space distance, 0 disables.
+  virtual bool SetModelScreenSpace3D(const ModelScreenSpace3D &settings) { return false; }
   virtual bool SetModelSoftParticles3D(float distance) { return false; }
   virtual bool SetModelVisibility3D(const ModelVisibility3D &visibility) { return false; }
   virtual bool SetModelWind3D(const ModelWind3D &wind) { return false; }

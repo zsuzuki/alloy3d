@@ -123,6 +123,7 @@ int main(int argc, char **argv)
                         return;
                       [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{true,scene.CastShadow(asset)})];
                       [h.draw setModelSoftParticles:scene.SoftParticles(asset)];
+                      [h.draw setModelScreenSpace:scene.ScreenSpace(asset)];
                       [h.draw setModelWind:scene.Wind(asset)];
                       [h.draw setModelTextureTransform:scene.TextureTransform(asset)];
                       [h.draw setModelTransmission:(alloy3d::ModelTransmission3D{scene.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
@@ -147,6 +148,7 @@ int main(int argc, char **argv)
                     });
                 if(!waterOnly && !dropsOnly)
                 {
+                  [h.draw setModelScreenSpace:alloy3d::ModelScreenSpace3D{}];
                   [h.draw setModelSoftParticles:0];
                   [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{false,true})];
                   [h.draw setModelShader:{} parameters:{}];[h.draw setModelTextureTransform:alloy3d::ModelTextureTransform3D{}];

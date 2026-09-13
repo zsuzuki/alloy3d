@@ -78,6 +78,7 @@ struct DrawModel3D
   alloy3d::ModelWind3D wind;
   alloy3d::ModelVisibility3D visibility;
   float softDistance = 0;
+  alloy3d::ModelScreenSpace3D screenSpace;
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -95,7 +96,7 @@ struct DrawModel3D
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
         textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), alphaToCoverage(other.alphaToCoverage), normalStrength(other.normalStrength),
-        materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), wind(other.wind), visibility(other.visibility), softDistance(other.softDistance), instanceOffset(other.instanceOffset),
+        materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), wind(other.wind), visibility(other.visibility), softDistance(other.softDistance), screenSpace(other.screenSpace), instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
   }
@@ -106,11 +107,11 @@ struct DrawModel3D
     shader = source.shader; parameters = source.parameters; highlight = source.highlight;
     textureTransform = source.textureTransform; maxAnisotropy = source.maxAnisotropy; alphaToCoverage = source.alphaToCoverage;
     normalStrength = source.normalStrength; materialDetail = source.materialDetail;
-    transmission = source.transmission; coverage = source.coverage; wind = source.wind; visibility = source.visibility; softDistance = source.softDistance;
+    transmission = source.transmission; coverage = source.coverage; wind = source.wind; visibility = source.visibility; softDistance = source.softDistance; screenSpace = source.screenSpace;
   }
   bool sameStyle(const DrawModel3D &other) const
   {
-    return softDistance == other.softDistance && visibility.visible == other.visibility.visible && visibility.castShadow == other.visibility.castShadow &&
+    return screenSpace.refraction==other.screenSpace.refraction && screenSpace.refractionPixels==other.screenSpace.refractionPixels && screenSpace.reflection==other.screenSpace.reflection && screenSpace.maxDistance==other.screenSpace.maxDistance && screenSpace.thickness==other.screenSpace.thickness && softDistance == other.softDistance && visibility.visible == other.visibility.visible && visibility.castShadow == other.visibility.castShadow &&
         shader == other.shader && simd_all(parameters == other.parameters) &&
         highlight.strength == other.highlight.strength && highlight.shininess == other.highlight.shininess &&
         simd_all(textureTransform.scale == other.textureTransform.scale) &&
@@ -217,6 +218,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   alloy3d::ModelWind3D modelWind_;
   alloy3d::ModelVisibility3D modelVisibility_;
   float softDistance_;
+  alloy3d::ModelScreenSpace3D screenSpace_;
   id<MTLTexture> sceneColor_, sceneDepth_;
   size_t instanceUsed_;
   id<MTLDepthStencilState>                            modelDepth_[2];
@@ -1112,6 +1114,16 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 {
   sceneColor_=color;sceneDepth_=depth;
 }
+- (void)setModelScreenSpace:(const alloy3d::ModelScreenSpace3D &)s
+{
+  if(!std::isfinite(s.refraction) || s.refraction<0 || s.refraction>1 ||
+     !std::isfinite(s.reflection) || s.reflection<0 || s.reflection>1 ||
+     !std::isfinite(s.refractionPixels) || s.refractionPixels<0 || s.refractionPixels>128 ||
+     !std::isfinite(s.maxDistance) || s.maxDistance<=0 || s.maxDistance>1000 ||
+     !std::isfinite(s.thickness) || s.thickness<=0 || s.thickness>10)
+    throw std::invalid_argument("Invalid screen-space surface settings");
+  screenSpace_=s;
+}
 - (void)setModelSoftParticles:(float)distance
 {
   if(!std::isfinite(distance) || distance<0 || distance>100)throw std::invalid_argument("Soft particle distance must be in [0,100]");
@@ -1331,6 +1343,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   drawModelList_.back().wind = modelWind_;
   drawModelList_.back().visibility = modelVisibility_;
   drawModelList_.back().softDistance = softDistance_;
+  drawModelList_.back().screenSpace = screenSpace_;
   drawModelList_.back().coverage = modelCoverage_;
 }
 
@@ -1371,6 +1384,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   drawModelList_.back().wind = modelWind_;
   drawModelList_.back().visibility = modelVisibility_;
   drawModelList_.back().softDistance = softDistance_;
+  drawModelList_.back().screenSpace = screenSpace_;
       drawModelList_.back().coverage = i.coverage;
     }
     return;
@@ -1392,6 +1406,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   drawModelList_.back().wind = modelWind_;
   drawModelList_.back().visibility = modelVisibility_;
   drawModelList_.back().softDistance = softDistance_;
+  drawModelList_.back().screenSpace = screenSpace_;
   }
   catch (...)
   {
@@ -1525,6 +1540,9 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                                   float((part.roughnessTexture ? 1 : 0) | (part.occlusionTexture ? 2 : 0))};
         material.transmission = simd_make_float4(dmodel.transmission.color, dmodel.transmission.strength);
         material.softDistance = blend ? dmodel.softDistance : 0;
+        material.screenSurface = {blend ? dmodel.screenSpace.refraction : 0.f,dmodel.screenSpace.refractionPixels,
+            blend ? dmodel.screenSpace.reflection : 0.f,dmodel.screenSpace.maxDistance};
+        material.screenThickness = dmodel.screenSpace.thickness;
         material.coverage = dmodel.coverage;
         SetWindUniforms(material, dmodel);
         [renderEncoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
