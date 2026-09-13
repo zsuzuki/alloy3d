@@ -92,6 +92,7 @@ public:
           case Key::N: s.normalMaps = !s.normalMaps; break;
           case Key::M: s.materialDetail = !s.materialDetail; break;
           case Key::T: s.transmission = !s.transmission; break;
+          case Key::U: s.shadowLod = !s.shadowLod; break;
           case Key::L: s.bloom = !s.bloom; break;
           case Key::O: s.toneMapping = !s.toneMapping; break;
           case Key::K: s.softShadows = !s.softShadows; environmentDirty_ = true; break;
@@ -160,6 +161,7 @@ public:
     scene_.Draw(
         [&](size_t asset, std::span<const alloy3d::ModelInstance> instances)
         {
+          ctx.SetModelVisibility3D({true,scene_.CastShadow(asset)});
           ctx.SetModelWind3D(scene_.Wind(asset));
           ctx.SetModelTextureTransform3D(scene_.TextureTransform(asset));
           ctx.SetModelTransmission3D({scene_.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
@@ -180,6 +182,12 @@ public:
                                    48});
           ctx.DrawModelInstances3D(models_[asset], instances);
         });
+    ctx.SetModelVisibility3D({false,true});
+    ctx.SetModelShader(nullptr);ctx.SetModelTextureTransform3D({});
+    scene_.DrawShadowProxies([&](size_t asset, auto instances){
+      ctx.SetModelWind3D(scene_.Wind(asset));ctx.DrawModelInstances3D(models_[asset],instances);
+    });
+    ctx.SetModelVisibility3D({});
     ctx.SetModelWind3D({});
     ctx.SetModelTextureTransform3D({});
     ctx.SetModelShader(nullptr);

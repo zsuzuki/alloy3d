@@ -3,6 +3,13 @@
 
 namespace alloy3d
 {
+// Select color visibility and shadow casting independently (per draw).
+struct ModelVisibility3D
+{
+  bool visible = true;
+  bool castShadow = true;
+};
+
 // One placement of a model. Rotations use radians, as in DrawModel3D.
 // color.w is an application fade applied after glTF alpha-mode/cutoff rules.
 struct ModelInstance

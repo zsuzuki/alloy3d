@@ -121,6 +121,7 @@ int main(int argc, char **argv)
                         return;
                       if (dropsOnly && asset != forest::Droplet)
                         return;
+                      [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{true,scene.CastShadow(asset)})];
                       [h.draw setModelWind:scene.Wind(asset)];
                       [h.draw setModelTextureTransform:scene.TextureTransform(asset)];
                       [h.draw setModelTransmission:(alloy3d::ModelTransmission3D{scene.settings.transmission && forest::IsFoliage(asset) ? .45f : 0.f,
@@ -143,6 +144,15 @@ int main(int argc, char **argv)
                                                     48})];
                       [h.draw drawModelInstances:models[asset] instances:instances];
                     });
+                if(!waterOnly && !dropsOnly)
+                {
+                  [h.draw setModelVisibility:(alloy3d::ModelVisibility3D{false,true})];
+                  [h.draw setModelShader:{} parameters:{}];[h.draw setModelTextureTransform:alloy3d::ModelTextureTransform3D{}];
+                  scene.DrawShadowProxies([&](size_t asset,auto instances){
+                    [h.draw setModelWind:scene.Wind(asset)];[h.draw drawModelInstances:models[asset] instances:instances];
+                  });
+                }
+                [h.draw setModelVisibility:alloy3d::ModelVisibility3D{}];
               });
         };
         // Float MSAA resolve + tone mapping can straddle an 8-bit rounding boundary.
@@ -160,6 +170,10 @@ int main(int argc, char **argv)
           return true;
         };
         auto first = render(0);
+        scene.settings.shadowLod = false;
+        Check(!imagesMatch(first,render(0)), "shadow LOD did not affect forest");
+        scene.settings.shadowLod = true;
+        Check(imagesMatch(first,render(0)), "shadow LOD toggle did not restore forest");
         scene.settings.bloom = false;
         Check(!imagesMatch(first,render(0)), "bloom did not affect forest");
         scene.settings.bloom = true;

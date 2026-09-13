@@ -23,6 +23,7 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
 
 @interface Draw3D : NSObject
 - (alloy3d::ModelShaderPtr)createModelMaterialShader:(std::string_view)source diagnostics:(std::string &)diagnostics;
+- (void)setModelVisibility:(const alloy3d::ModelVisibility3D &)visibility;
 - (void)setModelWind:(const alloy3d::ModelWind3D &)wind;
 - (void)setModelCoverage:(simd_float2)interval;
 - (void)setFrustumCulling:(bool)enabled;

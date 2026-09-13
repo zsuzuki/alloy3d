@@ -76,6 +76,7 @@ struct DrawModel3D
   alloy3d::ModelTransmission3D transmission;
   simd_float2 coverage = {0,1};
   alloy3d::ModelWind3D wind;
+  alloy3d::ModelVisibility3D visibility;
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -93,7 +94,7 @@ struct DrawModel3D
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
         textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), alphaToCoverage(other.alphaToCoverage), normalStrength(other.normalStrength),
-        materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), wind(other.wind), instanceOffset(other.instanceOffset),
+        materialDetail(other.materialDetail), transmission(other.transmission), coverage(other.coverage), wind(other.wind), visibility(other.visibility), instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
   }
@@ -104,11 +105,12 @@ struct DrawModel3D
     shader = source.shader; parameters = source.parameters; highlight = source.highlight;
     textureTransform = source.textureTransform; maxAnisotropy = source.maxAnisotropy; alphaToCoverage = source.alphaToCoverage;
     normalStrength = source.normalStrength; materialDetail = source.materialDetail;
-    transmission = source.transmission; coverage = source.coverage; wind = source.wind;
+    transmission = source.transmission; coverage = source.coverage; wind = source.wind; visibility = source.visibility;
   }
   bool sameStyle(const DrawModel3D &other) const
   {
-    return shader == other.shader && simd_all(parameters == other.parameters) &&
+    return visibility.visible == other.visibility.visible && visibility.castShadow == other.visibility.castShadow &&
+        shader == other.shader && simd_all(parameters == other.parameters) &&
         highlight.strength == other.highlight.strength && highlight.shininess == other.highlight.shininess &&
         simd_all(textureTransform.scale == other.textureTransform.scale) &&
         simd_all(textureTransform.offset == other.textureTransform.offset) &&
@@ -212,6 +214,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   bool frustumCulling_;
   simd_float2 modelCoverage_;
   alloy3d::ModelWind3D modelWind_;
+  alloy3d::ModelVisibility3D modelVisibility_;
   id<MTLDepthStencilState>                            modelDepth_[2];
   std::vector<TransparentPart>                        transparentParts_;
   id<MTLBuffer>              uniformBuffer_[3];
@@ -1101,6 +1104,11 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   fogInverseRange_ = inverseRange;
 }
 
+- (void)setModelVisibility:(const alloy3d::ModelVisibility3D &)visibility
+{
+  modelVisibility_ = visibility;
+}
+
 - (void)setModelWind:(const alloy3d::ModelWind3D &)wind
 {
   if (!std::isfinite(wind.strength) || wind.strength < 0 || wind.strength > 10 ||
@@ -1238,6 +1246,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   uniform.perspectiveTransform = simd_mul(lightViewProjection_, simd_inverse(view));
   for (const auto &draw : drawModelList_)
   {
+    if(!draw.visibility.castShadow)continue;
     bool instanced = draw.instanceCount != 0;
     if (!instanced && draw.color.w < 1)
       continue;
@@ -1306,6 +1315,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
   drawModelList_.back().transmission = modelTransmission_;
   drawModelList_.back().wind = modelWind_;
+  drawModelList_.back().visibility = modelVisibility_;
   drawModelList_.back().coverage = modelCoverage_;
 }
 
@@ -1344,6 +1354,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
       drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
       drawModelList_.back().transmission = modelTransmission_;
   drawModelList_.back().wind = modelWind_;
+  drawModelList_.back().visibility = modelVisibility_;
       drawModelList_.back().coverage = i.coverage;
     }
     return;
@@ -1363,6 +1374,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
     drawModelList_.back().transmission = modelTransmission_;
   drawModelList_.back().wind = modelWind_;
+  drawModelList_.back().visibility = modelVisibility_;
   }
   catch (...)
   {
@@ -1534,6 +1546,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
       transparentParts_.clear();
       for (const auto &dmodel : drawModelList_)
       {
+        if(!dmodel.visibility.visible)continue;
         for (ModelPart *part in dmodel.model.parts)
         {
           if (frustumCulling_)

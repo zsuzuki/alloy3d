@@ -169,7 +169,7 @@ struct Settings
 {
   bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
        flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true,
-       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true;
+       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true, shadowLod = true;
 };
 
 class Scene
@@ -559,6 +559,21 @@ public:
     if (asset == Water)
       return {{1, 1}, {0, -std::fmod(waterTime * .155f, 1.f)}};
     return {};
+  }
+  bool CastShadow(size_t asset) const
+  {
+    if(settings.shadowLod)
+      for(size_t v=0;v<3;++v)if(asset==Crowns[v] || asset==Foliage[v])return false;
+    return true;
+  }
+  template <class Submit> void DrawShadowProxies(Submit submit) const
+  {
+    if(!settings.shadows || !settings.shadowLod)return;
+    for(size_t v=0;v<3;++v)
+    {
+      submit(DistantCrowns[v],std::span<const alloy3d::ModelInstance>(live_[Crowns[v]]));
+      submit(DistantFoliage[v],std::span<const alloy3d::ModelInstance>(live_[Foliage[v]]));
+    }
   }
   template <class Submit> void Draw(Submit submit) const
   {

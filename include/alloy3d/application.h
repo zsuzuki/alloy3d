@@ -107,6 +107,7 @@ public:
   // Per-draw dither interval, default [0,1]. Instances provide their own interval.
   // Available when RenderOptions.hdr was enabled at launch.
   virtual bool SetPostProcessing3D(const PostProcessing3D &settings) { return false; }
+  virtual bool SetModelVisibility3D(const ModelVisibility3D &visibility) { return false; }
   virtual bool SetModelWind3D(const ModelWind3D &wind) { return false; }
   virtual bool SetModelCoverage3D(simd_float2 interval) { return false; }
   // Frame-level conservative color-pass culling. Shadow casters remain submitted.

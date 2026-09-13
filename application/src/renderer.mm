@@ -337,6 +337,10 @@ public:
     if(!post_)return false;
     post_->set(settings);return true;
   }
+  bool SetModelVisibility3D(const alloy3d::ModelVisibility3D &visibility) override
+  {
+    [draw3d_ setModelVisibility:visibility];return true;
+  }
   bool SetModelWind3D(const alloy3d::ModelWind3D &wind) override
   {
     [draw3d_ setModelWind:wind];

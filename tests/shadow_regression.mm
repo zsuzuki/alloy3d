@@ -73,6 +73,16 @@ static void Test(Harness &h, const std::filesystem::path &root)
   [h.draw setDirectionalShadow:shadow];
   Check(withShadow==h.Run(camera,[&]{scene(caster);}),"disabling PCF did not restore baseline");
 
+  auto shadowOnly=h.Run(camera,[&]{
+    Quad(h.draw,0,0);[h.draw setModelVisibility:(alloy3d::ModelVisibility3D{false,true})];
+    Model(h.draw,caster);[h.draw setModelVisibility:alloy3d::ModelVisibility3D{}];
+  });
+  Check([h.draw modelDrawCallCount]==0 && Red(At(shadowOnly,.5))<60,"hidden proxy did not cast a shadow");
+  auto noCast=h.Run(camera,[&]{
+    Quad(h.draw,0,0);[h.draw setModelVisibility:(alloy3d::ModelVisibility3D{true,false})];
+    Model(h.draw,caster);[h.draw setModelVisibility:alloy3d::ModelVisibility3D{}];
+  });
+  Check(noCast==noShadow,"visible noncaster changed color or cast shadow");
   auto primitive = h.Run(camera,
                          [&]
                          {
