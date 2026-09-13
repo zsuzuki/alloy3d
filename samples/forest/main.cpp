@@ -92,6 +92,7 @@ public:
           case Key::N: s.normalMaps = !s.normalMaps; break;
           case Key::M: s.materialDetail = !s.materialDetail; break;
           case Key::T: s.transmission = !s.transmission; break;
+          case Key::Y: s.volumetric = !s.volumetric; break;
           case Key::E: s.screenWater = !s.screenWater; break;
           case Key::C: s.softParticles = !s.softParticles; break;
           case Key::U: s.shadowLod = !s.shadowLod; break;

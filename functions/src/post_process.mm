@@ -24,8 +24,8 @@ PostProcess::PostProcess(id<MTLDevice> device,id<MTLLibrary> library,MTLPixelFor
 }
 PostProcess::~PostProcess()
 {
-  for(auto &page:pages_){[page.color release];[page.multisample release];[page.bloom release];[page.bloomScratch release];[page.depth release];[page.sceneColor release];[page.sceneDepth release];}
-  [depthPipeline_ release];[pipeline_ release];[depthState_ release];[library_ release];[bloomExtract_ release];[bloomBlur_ release];
+  for(auto &page:pages_){[page.color release];[page.multisample release];[page.bloom release];[page.bloomScratch release];[page.depth release];[page.sceneColor release];[page.sceneDepth release];[page.volume release];}
+  [volumePipeline_ release];[depthPipeline_ release];[pipeline_ release];[depthState_ release];[library_ release];[bloomExtract_ release];[bloomBlur_ release];
 }
 void PostProcess::set(const PostProcessing3D &settings)
 {
@@ -33,6 +33,14 @@ void PostProcess::set(const PostProcessing3D &settings)
      int(settings.toneMapping)<0 || int(settings.toneMapping)>2 ||
      !std::isfinite(settings.bloom.strength) || settings.bloom.strength<0 || settings.bloom.strength>4 ||
      !std::isfinite(settings.bloom.threshold) || settings.bloom.threshold<0 || settings.bloom.threshold>64 ||
+     !std::isfinite(settings.volumetric.strength) || settings.volumetric.strength<0 || settings.volumetric.strength>4 ||
+     !std::isfinite(settings.volumetric.density) || settings.volumetric.density<0 || settings.volumetric.density>1 ||
+     !std::isfinite(settings.volumetric.baseHeight) ||
+     !std::isfinite(settings.volumetric.falloff) || settings.volumetric.falloff<0 || settings.volumetric.falloff>10 ||
+     !std::isfinite(settings.volumetric.maxDistance) || settings.volumetric.maxDistance<=0 || settings.volumetric.maxDistance>1000 ||
+     !std::isfinite(settings.volumetric.anisotropy) || std::abs(settings.volumetric.anisotropy)>.9f ||
+     settings.volumetric.steps<8 || settings.volumetric.steps>64 ||
+     (settings.volumetric.strength>0 && !sceneEffects_) ||
      !std::isfinite(settings.bloom.radius) || settings.bloom.radius<1 || settings.bloom.radius>32)
     throw std::invalid_argument("Alloy3D post processing requires exposure in [0,16] and a valid tone mapper");
   settings_=settings;
@@ -61,6 +69,7 @@ MTLRenderPassDescriptor *PostProcess::begin(MTLRenderPassDescriptor *output,NSUI
     [page.color release];[page.multisample release];
     [page.bloom release];[page.bloomScratch release];page.bloom=page.bloomScratch=nil;
     page.color=color;page.multisample=multisample;page.releasePending=false;
+    [page.volume release];page.volume=nil;
     [page.depth release];[page.sceneColor release];[page.sceneDepth release];page.depth=page.sceneColor=page.sceneDepth=nil;
     if(sceneEffects_)
     {
@@ -126,6 +135,7 @@ void PostProcess::captureScene(id<MTLCommandBuffer> commands,NSUInteger index,co
 }
 void PostProcess::prepare(id<MTLCommandBuffer> commands,NSUInteger index)
 {
+  prepareVolume(commands,index);
   if(settings_.bloom.strength<=0)return;
   auto &page=pages_.at(index);
   if(!bloomExtract_)
@@ -159,19 +169,61 @@ void PostProcess::prepare(id<MTLCommandBuffer> commands,NSUInteger index)
 }
 void PostProcess::encode(id<MTLRenderCommandEncoder> encoder,NSUInteger page)
 {
-  simd_float4 parameters={settings_.exposure,float(settings_.toneMapping),settings_.bloom.strength,0};
+  simd_float4 parameters={settings_.exposure,float(settings_.toneMapping),settings_.bloom.strength,settings_.volumetric.strength>0 ? 1.f : 0.f};
   [encoder setRenderPipelineState:pipeline_];
   [encoder setDepthStencilState:depthState_];
   [encoder setCullMode:MTLCullModeNone];
   [encoder setFragmentTexture:pages_.at(page).color atIndex:0];
   [encoder setFragmentTexture:settings_.bloom.strength>0 ? pages_.at(page).bloom : pages_.at(page).color atIndex:1];
+  [encoder setFragmentTexture:pages_.at(page).volume ? pages_.at(page).volume : pages_.at(page).color atIndex:2];
+  [encoder setFragmentTexture:pages_.at(page).sceneDepth ? pages_.at(page).sceneDepth : pages_.at(page).color atIndex:3];
   [encoder setFragmentBytes:&parameters length:sizeof(parameters) atIndex:0];
   [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+}
+void PostProcess::setVolumeScene(const CameraData &camera,simd_float3 direction,simd_float3 color,
+    simd_float4x4 shadow,simd_float4 parameters,id<MTLTexture> map)
+{
+  volumeUniforms_.inverseProjection=simd_inverse(camera.getProjectionMatrix());
+  volumeUniforms_.inverseView=simd_inverse(camera.getModelViewMatrix());
+  volumeUniforms_.shadowTransform=shadow;
+  volumeUniforms_.shadowParameters=parameters;
+  volumeUniforms_.lightDirection=simd_make_float4(direction,0);
+  volumeUniforms_.lightColor=simd_make_float4(color,settings_.volumetric.strength);
+  auto &s=settings_.volumetric;
+  volumeUniforms_.densityParameters={s.density,s.baseHeight,s.falloff,s.anisotropy};
+  volumeUniforms_.marchParameters={s.maxDistance,float(s.steps),
+      camera.getProjectionMode()==ProjectionMode::Identity ? 1.f : -1.f,
+      camera.getProjectionMode()==ProjectionMode::Perspective ? 1.f : 0.f};
+  volumeShadow_=map;
+}
+void PostProcess::prepareVolume(id<MTLCommandBuffer> commands,NSUInteger index)
+{
+  if(settings_.volumetric.strength<=0)return;
+  if(!volumeShadow_)throw std::logic_error("Volumetric scene lighting was not configured");
+  auto &page=pages_.at(index);
+  if(!volumePipeline_)
+  {
+    NSError *error=nil;volumePipeline_=[device_ newComputePipelineStateWithFunction:[[library_ newFunctionWithName:@"volumeLight"] autorelease] error:&error];
+    if(!volumePipeline_)throw std::runtime_error(error.localizedDescription.UTF8String);
+  }
+  if(!page.volume)
+  {
+    auto desc=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
+      width:(page.color.width+1)/2 height:(page.color.height+1)/2 mipmapped:NO];
+    desc.storageMode=MTLStorageModePrivate;desc.usage=MTLTextureUsageShaderRead|MTLTextureUsageShaderWrite;
+    page.volume=[device_ newTextureWithDescriptor:desc];if(!page.volume)throw std::bad_alloc();
+  }
+  auto encoder=[commands computeCommandEncoder];encoder.label=@"Alloy3D volumetric light";
+  [encoder setComputePipelineState:volumePipeline_];[encoder setTexture:page.sceneDepth atIndex:0];
+  [encoder setTexture:volumeShadow_ atIndex:1];[encoder setTexture:page.volume atIndex:2];
+  [encoder setBytes:&volumeUniforms_ length:sizeof(volumeUniforms_) atIndex:0];
+  [encoder dispatchThreads:MTLSizeMake(page.volume.width,page.volume.height,1) threadsPerThreadgroup:MTLSizeMake(8,8,1)];
+  [encoder endEncoding];volumeShadow_=nil;
 }
 void PostProcess::releaseUnusedMemory(){for(auto &page:pages_)page.releasePending=true;}
 size_t PostProcess::bytes() const
 {
-  size_t total=0;for(const auto &page:pages_)total+=page.color.allocatedSize+page.multisample.allocatedSize+page.bloom.allocatedSize+page.bloomScratch.allocatedSize+page.depth.allocatedSize+page.sceneColor.allocatedSize+page.sceneDepth.allocatedSize;
+  size_t total=0;for(const auto &page:pages_)total+=page.color.allocatedSize+page.multisample.allocatedSize+page.bloom.allocatedSize+page.bloomScratch.allocatedSize+page.depth.allocatedSize+page.sceneColor.allocatedSize+page.sceneDepth.allocatedSize+page.volume.allocatedSize;
   return total;
 }
 bool PostProcess::releasePending() const

@@ -22,10 +22,12 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
   DrawText3DAlignRightBottom,
 };
 
+namespace alloy3d::metal { class PostProcess; }
 enum class ScenePhase { All, Opaque, Transparent };
 
 @interface Draw3D : NSObject
 - (alloy3d::ModelShaderPtr)createModelMaterialShader:(std::string_view)source diagnostics:(std::string &)diagnostics;
+- (void)configurePostProcess:(alloy3d::metal::PostProcess * _Nonnull)post camera:(const alloy3d::CameraData &)camera;
 - (void)setModelScreenSpace:(const alloy3d::ModelScreenSpace3D &)settings;
 - (void)setModelSoftParticles:(float)distance;
 - (void)setSceneColor:(nullable id<MTLTexture>)color depth:(nullable id<MTLTexture>)depth;

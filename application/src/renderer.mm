@@ -699,6 +699,7 @@ public:
 
     // 3D Graphics
     const bool split=post_ && post_->sceneEffects();
+    if(split)[draw3d_ configurePostProcess:post_.get() camera:camera_];
     [draw3d_ render:renderEncoder camera:&camera_ phase:split ? ScenePhase::Opaque : ScenePhase::All];
     if(split)
     {

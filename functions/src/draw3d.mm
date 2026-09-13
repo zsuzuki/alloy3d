@@ -4,6 +4,7 @@
 #include "dsemaphore.h"
 #include "model_shader_source.h"
 #include "shader_def.h"
+#include <alloy3d/metal/post_process.h>
 #import <Metal/Metal.h>
 #include <algorithm>
 #import <alloy3d/camera.h>
@@ -1113,6 +1114,12 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 - (void)setSceneColor:(id<MTLTexture>)color depth:(id<MTLTexture>)depth
 {
   sceneColor_=color;sceneDepth_=depth;
+}
+- (void)configurePostProcess:(alloy3d::metal::PostProcess *)post camera:(const alloy3d::CameraData &)camera
+{
+  post->setVolumeScene(camera,lightDirection_,lightColor_*diffuseIntensity_,lightViewProjection_,
+    simd_float4{shadowReady_ ? 1.f : 0.f,shadowSettings_.depthBias,0,0},
+    shadowReady_ ? shadowMaps_[pageIndex_] : shadowFallback_);
 }
 - (void)setModelScreenSpace:(const alloy3d::ModelScreenSpace3D &)s
 {

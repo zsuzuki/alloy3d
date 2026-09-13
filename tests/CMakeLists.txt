@@ -1,3 +1,10 @@
+add_executable(alloy3d_volumetric_regression volumetric_regression.mm)
+target_include_directories(alloy3d_volumetric_regression PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_volumetric_regression PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_volumetric_regression shaders)
+add_test(NAME volumetric_regression COMMAND alloy3d_volumetric_regression
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib ${CMAKE_SOURCE_DIR}/assets/tests/materials)
+set_tests_properties(volumetric_regression PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
 add_executable(alloy3d_screen_surface_regression screen_surface_regression.mm)
 target_include_directories(alloy3d_screen_surface_regression PRIVATE ../functions/internal)
 target_link_libraries(alloy3d_screen_surface_regression PRIVATE Alloy3D::application)

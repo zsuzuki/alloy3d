@@ -170,7 +170,7 @@ struct Settings
 {
   bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
        flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true,
-       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true, shadowLod = true, softParticles = true, screenWater = true;
+       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true, shadowLod = true, softParticles = true, screenWater = true, volumetric = true;
 };
 
 class Scene
@@ -538,7 +538,8 @@ public:
   }
   alloy3d::PostProcessing3D PostProcessing() const
   {
-    return {1,settings.toneMapping ? alloy3d::ToneMapping3D::ACES : alloy3d::ToneMapping3D::None,{settings.bloom ? .08f : 0.f, .8f, 4}};
+    return {1,settings.toneMapping ? alloy3d::ToneMapping3D::ACES : alloy3d::ToneMapping3D::None,{settings.bloom ? .08f : 0.f, .8f, 4},
+      {settings.volumetric && settings.shafts ? .25f : 0.f,.028f,0,.22f,45,.35f,32}};
   }
   alloy3d::ModelWind3D Wind(size_t asset) const
   {
@@ -589,6 +590,7 @@ public:
   {
     for (size_t asset = 0; asset < Assets.size(); ++asset)
     {
+      if (asset==Beam && settings.volumetric)continue;
       if ((asset == Beam || asset == Mote) && !settings.shafts)
         continue;
       if (asset == Droplet && !settings.droplets)

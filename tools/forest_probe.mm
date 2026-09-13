@@ -91,7 +91,9 @@ int main(int argc, char **argv)
         bool waterOnly = false, dropsOnly = false;
         auto render = [&](float time)
         {
-          h.post->set(scene.PostProcessing());
+          auto post=scene.PostProcessing();
+          if(waterOnly || dropsOnly)post.volumetric.strength=0; // isolated animation probes omit atmospheric scattering
+          h.post->set(post);
           [h.draw setHeightFog:scene.HeightFog()];
           [h.draw setModelNormalMapping:(alloy3d::ModelNormalMapping3D{scene.settings.normalMaps ? 1.f : 0.f})];
           scene.Animate(time, camera.getEyePosition());

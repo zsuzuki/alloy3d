@@ -142,6 +142,7 @@ struct Harness
     auto encoder = [commands[slot] renderCommandEncoderWithDescriptor:scenePass];
     [encoder setDepthStencilState:depthState];
     const bool split=post && post->sceneEffects();
+    if(split)[draw configurePostProcess:post.get() camera:camera];
     [draw render:encoder camera:&camera phase:split ? ScenePhase::Opaque : ScenePhase::All];
     if(split)
     {
