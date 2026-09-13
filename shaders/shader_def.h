@@ -51,6 +51,9 @@ typedef struct
   simd_float4     shadowParameters; // enabled, depth bias, reserved, reserved
   simd_float4     fogColorAndEnabled;
   simd_float4     fogParameters; // start, 1/(end-start), reserved, reserved
+  simd_float4     heightFogColorDensity;
+  simd_float4     heightFogParameters; // base height, falloff, max opacity, perspective
+  simd_float4     heightFogWorldUp; // view-space world up, camera world height
   simd_float4     hemisphereSky; // RGB scaled by intensity
   simd_float4     hemisphereGround;
   simd_float4     hemisphereUpAndEnabled; // view-space up, enabled

@@ -176,7 +176,7 @@ struct Settings
 {
   bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
        flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true,
-       transmission = true;
+       transmission = true, heightFog = true;
 };
 
 class Scene
@@ -518,6 +518,10 @@ public:
     return {{-.65f, -1, .38f}, {1, .94f, .80f}, .25f, 1.f};
   }
   alloy3d::Fog3D             Fog() const { return {settings.fog, MistColor, 18, 96}; }
+  alloy3d::HeightFog3D HeightFog() const
+  {
+    return {settings.fog && settings.heightFog, MistColor, .012f, .5f, .65f, .25f};
+  }
   alloy3d::HemisphereLight3D Ambient() const
   {
     return {true, {.78f, .90f, .94f}, {.20f, .24f, .09f}, {0, 1, 0}, .68f};

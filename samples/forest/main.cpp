@@ -89,6 +89,7 @@ public:
           case Key::N: s.normalMaps = !s.normalMaps; break;
           case Key::M: s.materialDetail = !s.materialDetail; break;
           case Key::T: s.transmission = !s.transmission; break;
+          case Key::J: s.heightFog = !s.heightFog; environmentDirty_ = true; break;
           case Key::G:
             s.fog             = !s.fog;
             environmentDirty_ = true;
@@ -142,6 +143,7 @@ public:
       ctx.SetDirectionalLight3D(scene_.Light());
       ctx.SetHemisphereLight3D(scene_.Ambient());
       ctx.SetFog3D(scene_.Fog());
+      ctx.SetHeightFog3D(scene_.HeightFog());
       ctx.SetDirectionalShadow3D(scene_.Shadow());
       environmentDirty_ = false;
     }

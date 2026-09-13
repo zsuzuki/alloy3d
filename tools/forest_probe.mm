@@ -89,6 +89,7 @@ int main(int argc, char **argv)
         bool waterOnly = false, dropsOnly = false;
         auto render = [&](float time)
         {
+          [h.draw setHeightFog:scene.HeightFog()];
           [h.draw setModelNormalMapping:(alloy3d::ModelNormalMapping3D{scene.settings.normalMaps ? 1.f : 0.f})];
           scene.Animate(time, camera.getEyePosition());
           std::array<std::span<const alloy3d::ModelInstance>, forest::Assets.size()> placements;
@@ -158,6 +159,12 @@ int main(int argc, char **argv)
         Save(noTransmission, h.size, std::string(argv[3]) + "-no-transmission.ppm");
         scene.settings.transmission = true;
         Check(first == render(0), "transmission toggle did not restore forest");
+        scene.settings.heightFog = false;
+        auto noHeightFog = render(0);
+        Check(first != noHeightFog, "height fog did not affect forest");
+        Save(noHeightFog, h.size, std::string(argv[3]) + "-no-height-fog.ppm");
+        scene.settings.heightFog = true;
+        Check(first == render(0), "height fog toggle did not restore forest");
         // Check placed root tips against the terrain, including uneven river banks.
         scene.Draw(
             [&](size_t asset, auto instances)

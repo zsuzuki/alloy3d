@@ -38,6 +38,7 @@ vertex v2f simpleVert3d(device const VertexData3D* vertexData [[buffer(0)]],
   float4 pos = float4(vd.position, 1.0);
   o.position = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
   o.viewDepth = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * pos).z : 0;
+  if (cameraData.heightFogColorDensity.w > 0) o.viewPosition = (cameraData.worldTransform * pos).xyz;
   o.normal   = cameraData.worldNormalTransform * vd.normal;
   o.texcoord = vd.texcoord.xy;
   o.color    = vd.color;
@@ -108,7 +109,7 @@ vertex v2f modelVert3d(device const VertexDataModel3D *vertexData [[buffer(0)]],
   // Custom surfaces need view position even with highlights disabled or unlit materials.
 #ifndef ALLOY3D_CUSTOM_SURFACE
   if ((material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0) ||
-      material.normalMapping.x != 0 || material.transmission.w > 0)
+      material.normalMapping.x != 0 || material.transmission.w > 0 || cameraData.heightFogColorDensity.w > 0)
 #endif
     o.viewPosition = (cameraData.worldTransform * position).xyz;
   o.normal     = UnitModelNormal(cameraData.worldNormalTransform * normal);
@@ -146,7 +147,7 @@ vertex v2f modelInstanceVert3d(device const VertexDataModel3D     *vertexData [[
   // Custom surfaces need view position even with highlights disabled or unlit materials.
 #ifndef ALLOY3D_CUSTOM_SURFACE
   if ((material.highlight.x > 0 && material.highlight.z != 0 && material.parameters.w == 0) ||
-      material.normalMapping.x != 0 || material.transmission.w > 0)
+      material.normalMapping.x != 0 || material.transmission.w > 0 || cameraData.heightFogColorDensity.w > 0)
 #endif
     o.viewPosition = (instance.modelView * position).xyz;
   o.normal     = UnitModelNormal(instance.normalTransform * normal);
@@ -179,7 +180,7 @@ fragment half4 simpleFrag3d( v2f in [[stage_in]], texture2d< half, access::sampl
 
     half3 illum = (in.color.rgb * texel.xyz * 0.1) + (in.color.rgb * texel.xyz * ndotl);
 
-    return ApplyFog(half4(illum, in.color.a * texel.a), in.viewDepth, cameraData);
+    return ApplyFog(half4(illum, in.color.a * texel.a), in.viewDepth, in.viewPosition, cameraData);
 }
 
 fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]],
@@ -212,7 +213,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
   bool  unlit        = material.parameters.w != 0 || normalLength < 0.001;
 #ifndef ALLOY3D_CUSTOM_SURFACE
   if (unlit)
-    return ApplyFog(baseColor, in.viewDepth, cameraData);
+    return ApplyFog(baseColor, in.viewDepth, in.viewPosition, cameraData);
 #endif
   float3 n = normalLength >= 0.001 ? in.normal / normalLength : float3(0);
   if (material.normalMapping.x != 0 && !unlit)
@@ -306,7 +307,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                        saturate(cameraData.lightColorAndDiffuse.w), roughness, occlusion, float3(transmissionColor)};
   litColor = half3(alloy3dShade(surface, parameters));
 #endif
-  return ApplyFog(half4(litColor, baseColor.a), in.viewDepth, cameraData);
+  return ApplyFog(half4(litColor, baseColor.a), in.viewDepth, in.viewPosition, cameraData);
 }
 
 vertex v2f textVert3d(device const VertexData3D* vertexData [[buffer(0)]],
@@ -320,6 +321,7 @@ vertex v2f textVert3d(device const VertexData3D* vertexData [[buffer(0)]],
   float4 pos = float4(vd.position, 1.0);
   o.position = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
   o.viewDepth = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * pos).z : 0;
+  if (cameraData.heightFogColorDensity.w > 0) o.viewPosition = (cameraData.worldTransform * pos).xyz;
   o.normal   = float3(0.0, 0.0, 0.0);
   o.texcoord = vd.texcoord.xy;
   o.color    = vd.color;
@@ -332,7 +334,7 @@ fragment half4 textFrag3d(v2f in [[stage_in]], texture2d<half, access::sample> t
 {
     constexpr sampler s(address::clamp_to_edge, filter::linear);
     half4 texel = tex.sample(s, in.texcoord).rgba;
-    return ApplyFog(in.color * texel, in.viewDepth, cameraData);
+    return ApplyFog(in.color * texel, in.viewDepth, in.viewPosition, cameraData);
 }
 
 // Same skinning, winding and MASK coverage as the color pass. No color attachment.

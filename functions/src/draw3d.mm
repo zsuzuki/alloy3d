@@ -213,6 +213,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   alloy3d::DirectionalShadow3D shadowSettings_;
   alloy3d::Fog3D fogSettings_;
   alloy3d::HemisphereLight3D hemisphereSettings_;
+  alloy3d::HeightFog3D heightFogSettings_;
   float fogInverseRange_;
   id<MTLTexture>               shadowMaps_[3];
   id<MTLTexture>               shadowFallback_;
@@ -1028,6 +1029,16 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   fogInverseRange_ = inverseRange;
 }
 
+- (void)setHeightFog:(const alloy3d::HeightFog3D &)fog
+{
+  if (!simd_all(fog.color >= 0) || !simd_all(fog.color <= 1) ||
+      !std::isfinite(fog.baseHeight) || !std::isfinite(fog.density) || fog.density < 0 || fog.density > 1 ||
+      !std::isfinite(fog.falloff) || fog.falloff < 0 || fog.falloff > 100 ||
+      !std::isfinite(fog.maxOpacity) || fog.maxOpacity < 0 || fog.maxOpacity > 1)
+    throw std::invalid_argument("Alloy3D height fog requires finite height, RGB/density/opacity in [0,1], falloff in [0,100]");
+  heightFogSettings_ = fog;
+}
+
 - (void)setHemisphereLight:(const alloy3d::HemisphereLight3D &)light
 {
   for (int i = 0; i < 3; ++i)
@@ -1273,6 +1284,18 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
         simd_make_float4(shadowReady_ ? 1 : 0, shadowSettings_.depthBias, 0, 0);
     uniform->fogColorAndEnabled = simd_make_float4(fogSettings_.color, float(fogSettings_.enabled));
     uniform->fogParameters = simd_make_float4(fogSettings_.start, fogInverseRange_, 0, 0);
+    uniform->heightFogColorDensity = simd_make_float4(heightFogSettings_.color,
+        heightFogSettings_.enabled ? heightFogSettings_.density : 0.f);
+    uniform->heightFogParameters = {heightFogSettings_.baseHeight, heightFogSettings_.falloff,
+        heightFogSettings_.maxOpacity,
+        camera->getProjectionMode() == alloy3d::ProjectionMode::Perspective ? 1.f : 0.f};
+    uniform->heightFogWorldUp = {0, 1, 0, 0};
+    if (uniform->heightFogColorDensity.w > 0)
+    {
+      auto inverseView = simd_inverse(mdlview);
+      uniform->heightFogWorldUp = {inverseView.columns[0].y, inverseView.columns[1].y,
+                                  inverseView.columns[2].y, inverseView.columns[3].y};
+    }
     uniform->hemisphereSky =
         simd_make_float4(hemisphereSettings_.skyColor * hemisphereSettings_.intensity, 0);
     uniform->hemisphereGround =

@@ -43,6 +43,16 @@ struct HemisphereLight3D
   float intensity = .35f;
 };
 
+struct HeightFog3D
+{
+  bool enabled = false;
+  simd_float3 color = {.5f, .6f, .7f}; // Linear RGB [0,1].
+  float density = .02f; // Extinction per world unit at baseHeight, [0,1].
+  float baseHeight = 0;
+  float falloff = .5f; // Exponential density falloff per upward world unit, [0,100].
+  float maxOpacity = .8f; // [0,1].
+};
+
 struct DirectionalLight3D
 {
   // World-space direction in which light travels. Finite, nonzero.

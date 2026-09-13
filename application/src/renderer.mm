@@ -318,6 +318,12 @@ public:
     return true;
   }
 
+  bool SetHeightFog3D(const alloy3d::HeightFog3D &fog) override
+  {
+    [draw3d_ setHeightFog:fog];
+    return true;
+  }
+
   void SetDirectionalLight3D(const alloy3d::DirectionalLight3D &light) override
   {
     [draw3d_ setDirectionalLight:light];

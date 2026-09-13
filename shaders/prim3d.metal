@@ -15,6 +15,7 @@ struct v2f
   half4  color;
   float4 shadowPosition;
   float viewDepth;
+  float3 viewPosition;
 };
 
 //
@@ -23,11 +24,12 @@ struct v2f
 vertex v2f primVert3d(device const VertexDataPrim3D *vertexData [[buffer(0)]],
                       device const Uniforms &cameraData [[buffer(1)]], uint vID [[vertex_id]])
 {
-  v2f o;
+  v2f o{};
 
   const device VertexDataPrim3D &vd  = vertexData[vID];
   float4                         pos = float4(vd.position, 1.0);
   o.viewDepth = cameraData.fogColorAndEnabled.w != 0 ? -(cameraData.worldTransform * pos).z : 0;
+  if (cameraData.heightFogColorDensity.w > 0) o.viewPosition = (cameraData.worldTransform * pos).xyz;
   pos        = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
   o.position = pos;
   o.normal   = cameraData.worldNormalTransform * vd.normal;
@@ -45,7 +47,7 @@ fragment half4 primFrag3d(v2f in [[stage_in]], device const Uniforms &cameraData
   float normalLength = length(in.normal);
   if (normalLength < 0.001)
   {
-    return ApplyFog(baseColor, in.viewDepth, cameraData);
+    return ApplyFog(baseColor, in.viewDepth, in.viewPosition, cameraData);
   }
 
   float3 n          = in.normal / normalLength;
@@ -56,7 +58,7 @@ fragment half4 primFrag3d(v2f in [[stage_in]], device const Uniforms &cameraData
   half3  lightColor = half3(cameraData.lightColorAndDiffuse.xyz);
   half3  illum      = baseColor.rgb * (ambient + diffuse * lightColor);
 
-  return ApplyFog(half4(illum, baseColor.a), in.viewDepth, cameraData);
+  return ApplyFog(half4(illum, baseColor.a), in.viewDepth, in.viewPosition, cameraData);
 }
 
 fragment void shadowPrimFrag3d(v2f in [[stage_in]])
