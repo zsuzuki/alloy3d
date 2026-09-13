@@ -25,6 +25,7 @@
 @property(readonly) BOOL       unlit;
 // Conservative current-pose center for per-part transparency sorting (cached).
 @property(readonly) simd_float3 sortCenter;
+@property(readonly) alloy3d::Bounds3D renderBounds;
 
 - (nonnull instancetype)initWithVertexBuffer:(nonnull id<MTLBuffer>)vertexBuffer
                                  indexBuffer:(nonnull id<MTLBuffer>)indexBuffer

@@ -97,6 +97,8 @@ public:
   virtual bool SetModelTransmission3D(const ModelTransmission3D &transmission) { return false; }
   // Frame-level optimization: coalesce compatible parts after transparency sorting.
   // Disabled by default; sorting order and depth-write policy are preserved.
+  // Frame-level conservative color-pass culling. Shadow casters remain submitted.
+  virtual bool SetFrustumCulling3D(bool enabled) { return false; }
   virtual bool SetTransparentBatching3D(bool enabled) { return false; }
 
   // Transform base-color UVs, including MASK shadow coverage and custom surface UVs.

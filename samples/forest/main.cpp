@@ -43,6 +43,7 @@ public:
   {
     ctx.SetModelTextureSampling3D({8});
     ctx.SetTransparentBatching3D(true);
+    ctx.SetFrustumCulling3D(true);
     for (size_t i = 0; i < models_.size(); ++i)
     {
       models_[i] = ctx.LoadModel(std::string("forest/") + forest::Assets[i] + ".glb");

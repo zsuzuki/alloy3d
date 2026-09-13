@@ -21,6 +21,7 @@
 #include <simd/simd.h>
 #include <utility>
 #include <vector>
+#include <alloy3d/visibility.h>
 
 namespace
 {
@@ -194,6 +195,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   id<MTLRenderPipelineState>                          pipelineStateModel_[2];
   id<MTLRenderPipelineState>                          pipelineStateModelInstances_[2];
   bool transparentBatching_;
+  bool frustumCulling_;
   id<MTLDepthStencilState>                            modelDepth_[2];
   std::vector<TransparentPart>                        transparentParts_;
   id<MTLBuffer>              uniformBuffer_[3];
@@ -1052,6 +1054,11 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   fogInverseRange_ = inverseRange;
 }
 
+- (void)setFrustumCulling:(bool)enabled
+{
+  frustumCulling_ = enabled;
+}
+
 - (void)setTransparentBatching:(bool)enabled
 {
   transparentBatching_ = enabled;
@@ -1432,11 +1439,42 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
                                instanceCount:instanced ? dmodel.instanceCount : 1];
         ++modelDrawCalls_;
       };
+      size_t usedInstances = modelInstances_.size();
+      const alloy3d::Frustum3D frustum(*camera);
+      std::vector<size_t> visible;
       transparentParts_.clear();
       for (const auto &dmodel : drawModelList_)
       {
         for (ModelPart *part in dmodel.model.parts)
         {
+          if (frustumCulling_)
+          {
+            const auto bounds = part.renderBounds;
+            if (dmodel.instanceCount)
+            {
+              visible.clear();
+              for (size_t i = 0; i < dmodel.instanceCount; ++i)
+              {
+                const auto &source = modelInstances_[dmodel.instanceOffset + i];
+                if (frustum.intersects(bounds, BuildModelMatrix(source.position, source.rotation, source.scale)))
+                  visible.push_back(dmodel.instanceOffset + i);
+              }
+              if (visible.empty()) continue;
+              if (visible.size() != dmodel.instanceCount)
+              {
+                SimpleGuard guard(modelLock_);
+                auto target = instanceBuffers_[pageIndex_].append(device_, usedInstances, visible.size());
+                auto original = static_cast<const ModelInstanceUniforms *>(instanceBuffers_[pageIndex_].buffer().contents);
+                for (size_t i = 0; i < visible.size(); ++i) target[i] = original[visible[i]];
+                DrawModel3D culled(dmodel, usedInstances, visible.size());
+                usedInstances += visible.size();
+                drawPart(culled, part, false);
+                continue;
+              }
+            }
+            else if (!frustum.intersects(bounds, BuildModelMatrix(dmodel.position, dmodel.rotation, dmodel.scale)))
+              continue;
+          }
           bool blend = part.alphaMode == 2 || (dmodel.instanceCount == 0 && dmodel.color.w < 1);
           if (!blend)
             drawPart(dmodel, part, false);
@@ -1458,7 +1496,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
                 transparentParts_.end(),
                 [](const auto &a, const auto &b)
                 { return a.depth == b.depth ? a.order < b.order : a.depth > b.depth; });
-      const auto offset = modelInstances_.size();
+      const auto offset = usedInstances;
       if (transparentBatching_ && !transparentParts_.empty())
       {
         SimpleGuard guard(modelLock_);

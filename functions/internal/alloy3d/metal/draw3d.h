@@ -21,6 +21,7 @@ typedef NS_ENUM(NSInteger, DrawText3DAlign) {
 };
 
 @interface Draw3D : NSObject
+- (void)setFrustumCulling:(bool)enabled;
 - (void)setTransparentBatching:(bool)enabled;
 - (void)setHeightFog:(const alloy3d::HeightFog3D &)fog;
 - (void)setModelTransmission:(const alloy3d::ModelTransmission3D &)transmission;

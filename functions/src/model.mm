@@ -526,6 +526,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   BOOL                                                  doubleSided_, unlit_;
   std::shared_ptr<const std::vector<alloy3d::Bounds3D>> influenceBounds_;
   simd_float3                                           sortCenter_;
+  alloy3d::Bounds3D renderBounds_;
   bool                                                  sortCenterDirty_;
 }
 
@@ -688,11 +689,18 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
       for (size_t i = 0; i < std::min(influenceBounds_->size(), jointMatrices_.size()); ++i)
         if ((*influenceBounds_)[i].isValid())
           bounds.include((*influenceBounds_)[i].transformed(jointMatrices_[i]));
+    renderBounds_ = bounds;
     sortCenter_ =
         bounds.isValid() ? bounds.min * .5f + bounds.max * .5f : simd_make_float3(0, 0, 0);
     sortCenterDirty_ = false;
   }
   return sortCenter_;
+}
+
+- (alloy3d::Bounds3D)renderBounds
+{
+  (void)[self sortCenter];
+  return renderBounds_;
 }
 
 // Shared vertex/index buffers are immutable after loading. Querying the current
@@ -767,6 +775,7 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     part->occlusionStrength_ = occlusionStrength_;
     part->influenceBounds_ = influenceBounds_;
     part->sortCenter_      = sortCenter_;
+    part->renderBounds_    = renderBounds_;
     part->sortCenterDirty_ = sortCenterDirty_;
     part->jointMatrices_ = jointMatrices_;
     return part;

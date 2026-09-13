@@ -324,6 +324,11 @@ public:
     return true;
   }
 
+  bool SetFrustumCulling3D(bool enabled) override
+  {
+    [draw3d_ setFrustumCulling:enabled];
+    return true;
+  }
   bool SetTransparentBatching3D(bool enabled) override
   {
     [draw3d_ setTransparentBatching:enabled];
