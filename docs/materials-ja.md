@@ -93,7 +93,8 @@ python3 tools/generate_material_fixtures.py --check
 平行光源の影は[シャドウマップ](shadows-ja.md)に対応しています。
 RGBの変更は[モデルのカスタムシェーダー](custom-shaders-ja.md)に対応しています。
 [簡易ハイライト](highlights-ja.md)でモデル単位にツヤを加えられます。
-[法線マップ](normal-maps-ja.md)で凹凸による陰影に対応します。金属度・粗さ、IBLは今後の対象です。
+[法線マップ](normal-maps-ja.md)で凹凸による陰影に対応します。
+[粗さとAO](surface-detail-ja.md)は選択式の簡易照明として使えます。金属度とIBLは今後の対象です。
 テクスチャは埋め込み画像／TEXCOORD_0／固定repeatに対応します。
 読み込み時に[ミップマップ](mipmaps-ja.md)を生成し、linear＋mip linearで補間します。
 MASKの細部はアルファの平均化により遠景で変化する場合があります。

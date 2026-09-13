@@ -4,6 +4,12 @@
 
 namespace alloy3d
 {
+struct ModelMaterialDetail3D
+{
+  // Optional lightweight use of glTF roughness and occlusion, not a full PBR model.
+  bool enabled = false;
+};
+
 struct ModelHighlight3D
 {
   // Blinn-Phong specular light. Zero strength disables it; no effect on Unlit materials.

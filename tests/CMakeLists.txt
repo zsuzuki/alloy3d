@@ -1,4 +1,11 @@
 add_executable(alloy3d_forest_probe ../tools/forest_probe.mm)
+add_executable(alloy3d_surface_detail_regression surface_detail_regression.mm)
+target_include_directories(alloy3d_surface_detail_regression PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_surface_detail_regression PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_surface_detail_regression shaders)
+add_test(NAME surface_detail_regression COMMAND alloy3d_surface_detail_regression
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib ${CMAKE_SOURCE_DIR}/assets/tests/surface)
+set_tests_properties(surface_detail_regression PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
 add_executable(alloy3d_normal_mapping_regression normal_mapping_regression.mm)
 target_include_directories(alloy3d_normal_mapping_regression PRIVATE ../functions/internal)
 target_link_libraries(alloy3d_normal_mapping_regression PRIVATE Alloy3D::application)

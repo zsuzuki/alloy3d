@@ -188,7 +188,9 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                            texture2d<half, access::sample> tex [[texture(0)]],
                            depth2d<float>                  shadowMap [[texture(1)]],
                            sampler colorSampler [[sampler(0)]],
-                           texture2d<half> normalMap [[texture(2)]]
+                           texture2d<half> normalMap [[texture(2)]],
+                           texture2d<half> roughnessMap [[texture(3)]],
+                           texture2d<half> occlusionMap [[texture(4)]]
 #ifdef ALLOY3D_CUSTOM_SURFACE
                            ,
                            constant float4 &parameters [[buffer(6)]]
@@ -242,6 +244,14 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
     n = -n;
   float3 l       = normalize(-cameraData.lightDirectionAndAmbient.xyz);
   half3 ambientColor = EnvironmentAmbient(n, cameraData);
+  float roughness = 1, occlusion = 1;
+  if (material.surfaceDetail.x != 0 && !unlit)
+  {
+    uint flags = uint(material.surfaceDetail.w);
+    roughness = saturate(material.surfaceDetail.y * ((flags & 1) ? float(roughnessMap.sample(colorSampler, in.texcoord).g) : 1.f));
+    if (flags & 2) occlusion = mix(1.f, float(occlusionMap.sample(colorSampler, in.texcoord).r), material.surfaceDetail.z);
+    ambientColor *= half(occlusion);
+  }
   half   diffuse = half(saturate(dot(n, l)) * saturate(cameraData.lightColorAndDiffuse.w));
   half   shadow =
       unlit ? half(1) : ShadowVisibility(in.shadowPosition, cameraData.shadowParameters, shadowMap);
@@ -258,7 +268,9 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
     if (dot(n, v) > 0 && h2 > 1e-8f)
     {
       float nh = saturate(dot(n, sum * rsqrt(h2)));
-      float specular = material.highlight.x * pow(nh, material.highlight.y) *
+      float exponent = material.surfaceDetail.x != 0 ? clamp(2.f / max(roughness * roughness, .015f) - 2.f, 1.f, 128.f)
+                                                     : material.highlight.y;
+      float specular = material.highlight.x * pow(nh, exponent) *
                        saturate(cameraData.lightColorAndDiffuse.w) * float(shadow);
       specularColor = half3(specular) * lightColor;
       litColor += specularColor;
@@ -280,7 +292,7 @@ fragment half4 modelFrag3d(v2f in [[stage_in]], bool frontFacing [[front_facing]
                        in.viewPosition,
                        material.highlight.z != 0 ? UnitModelNormal(-in.viewPosition) : float3(0, 0, 1),
                        l,
-                       saturate(cameraData.lightColorAndDiffuse.w)};
+                       saturate(cameraData.lightColorAndDiffuse.w), roughness, occlusion};
   litColor = half3(alloy3dShade(surface, parameters));
 #endif
   return ApplyFog(half4(litColor, baseColor.a), in.viewDepth, cameraData);

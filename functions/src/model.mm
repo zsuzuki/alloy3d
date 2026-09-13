@@ -514,6 +514,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   id<MTLTexture>            texture_;
   id<MTLTexture>            normalTexture_;
   float                    normalScale_;
+  id<MTLTexture>            roughnessTexture_, occlusionTexture_;
+  float                    roughness_, occlusionStrength_;
   NSUInteger                indexCount_;
   simd_float4               baseColor_;
   std::vector<simd_float4x4> jointMatrices_;
@@ -531,6 +533,10 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
 @synthesize texture      = texture_;
 @synthesize normalTexture = normalTexture_;
 @synthesize normalScale = normalScale_;
+@synthesize roughnessTexture = roughnessTexture_;
+@synthesize occlusionTexture = occlusionTexture_;
+@synthesize roughness = roughness_;
+@synthesize occlusionStrength = occlusionStrength_;
 @synthesize indexCount   = indexCount_;
 @synthesize baseColor    = baseColor_;
 @synthesize alphaMode    = alphaMode_;
@@ -625,6 +631,27 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   alphaCutoff_ = material ? material->alpha_cutoff : .5f;
   doubleSided_ = material && material->double_sided;
   unlit_       = material && material->unlit;
+  roughness_ = material && material->has_pbr_metallic_roughness
+                   ? material->pbr_metallic_roughness.roughness_factor : 1.f;
+  roughness_ = std::isfinite(roughness_) ? std::clamp(roughness_, 0.f, 1.f) : 1.f;
+  auto loadData = [&](const cgltf_texture_view &view) -> id<MTLTexture> {
+    if (!view.texture) return nil;
+    if (view.texcoord != 0 || view.has_transform)
+    {
+      NSLog(@"Alloy3D material data textures currently require untransformed TEXCOORD_0");
+      return nil;
+    }
+    return LoadEmbeddedTexture(view.texture, device_, false);
+  };
+  if (material)
+  {
+    const auto &rough = material->pbr_metallic_roughness.metallic_roughness_texture;
+    const auto &ao = material->occlusion_texture;
+    if (material->has_pbr_metallic_roughness) roughnessTexture_ = loadData(rough);
+    occlusionTexture_ = roughnessTexture_ && ao.texture == rough.texture && ao.texcoord == rough.texcoord && !ao.has_transform
+                            ? [roughnessTexture_ retain] : loadData(ao);
+    occlusionStrength_ = std::isfinite(ao.scale) ? std::clamp(ao.scale, 0.f, 1.f) : 1.f;
+  }
   if (material && material->normal_texture.texture)
   {
     const auto &normal = material->normal_texture;
@@ -734,6 +761,10 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
     part->unlit_           = unlit_;
     part->normalTexture_   = [normalTexture_ retain];
     part->normalScale_     = normalScale_;
+    part->roughnessTexture_ = [roughnessTexture_ retain];
+    part->occlusionTexture_ = [occlusionTexture_ retain];
+    part->roughness_ = roughness_;
+    part->occlusionStrength_ = occlusionStrength_;
     part->influenceBounds_ = influenceBounds_;
     part->sortCenter_      = sortCenter_;
     part->sortCenterDirty_ = sortCenterDirty_;
@@ -758,6 +789,8 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   [indexBuffer_ release];
   [texture_ release];
   [normalTexture_ release];
+  [roughnessTexture_ release];
+  [occlusionTexture_ release];
   [super dealloc];
 }
 

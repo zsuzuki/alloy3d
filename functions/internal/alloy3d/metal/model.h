@@ -12,6 +12,10 @@
 @property(readonly) _Nullable id<MTLTexture> texture;
 @property(readonly) _Nullable id<MTLTexture> normalTexture;
 @property(readonly) float normalScale;
+@property(readonly) _Nullable id<MTLTexture> roughnessTexture;
+@property(readonly) _Nullable id<MTLTexture> occlusionTexture;
+@property(readonly) float roughness;
+@property(readonly) float occlusionStrength;
 @property(readonly) NSUInteger indexCount;
 @property(readonly) simd_float4 baseColor;
 // glTF alpha modes: 0 OPAQUE, 1 MASK, 2 BLEND.

@@ -306,6 +306,12 @@ public:
     return true;
   }
 
+  bool SetModelMaterialDetail3D(const alloy3d::ModelMaterialDetail3D &detail) override
+  {
+    [draw3d_ setModelMaterialDetail:detail];
+    return true;
+  }
+
   void SetDirectionalLight3D(const alloy3d::DirectionalLight3D &light) override
   {
     [draw3d_ setDirectionalLight:light];

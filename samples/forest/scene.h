@@ -175,7 +175,7 @@ inline float TreeBaseHeight(float x, float z, float scale)
 struct Settings
 {
   bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
-       flow = true, billboards = true, droplets = true, normalMaps = true;
+       flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true;
 };
 
 class Scene

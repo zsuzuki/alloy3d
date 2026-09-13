@@ -36,6 +36,17 @@ def normal_map(kind, size=256):
             pixels.extend([round(127.5*(1-du/length)), round(127.5*(1-dv/length)), round(127.5*(1+1/length)), 255])
     return png(size,size,pixels)
 
+def surface_map(kind, size=256):
+    pixels=bytearray()
+    for y in range(size):
+        for x in range(size):
+            u,v=math.tau*x/size,math.tau*y/size
+            pools=(math.sin(3*u+math.sin(v))*math.sin(2*v+.4*math.cos(u))+1)*.5
+            # R=ambient occlusion, G=roughness, B=metallic (unused by lightweight lighting).
+            roughness=(.28+.50*pools) if kind=='ground' else (.20+.62*pools)
+            pixels.extend([round(255*(.82+.18*pools)),round(255*roughness),0,255])
+    return png(size,size,pixels)
+
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check',action='store_true')
@@ -47,3 +58,9 @@ if __name__ == '__main__':
             if path.read_bytes()!=data: raise SystemExit('Out of date: '+str(path))
         else: path.write_bytes(data)
         print(f'{kind}: {len(data)} bytes')
+    for kind in ('ground','rock'):
+        path=root/(kind+'_surface.png');data=surface_map(kind)
+        if args.check:
+            if path.read_bytes()!=data:raise SystemExit('Out of date: '+str(path))
+        else:path.write_bytes(data)
+        print(f'{kind} surface: {len(data)} bytes')

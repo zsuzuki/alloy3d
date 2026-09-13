@@ -118,6 +118,7 @@ int main(int argc, char **argv)
                       if (dropsOnly && asset != forest::Droplet)
                         return;
                       [h.draw setModelTextureTransform:scene.TextureTransform(asset)];
+                      [h.draw setModelMaterialDetail:(alloy3d::ModelMaterialDetail3D{scene.settings.materialDetail && (asset == forest::Ground || asset == forest::Rock)})];
                       [h.draw setModelShader:asset == forest::Water     ? water
                                              : asset == forest::Ground  ? ground
                                              : forest::IsFoliage(asset) ? leaf
@@ -143,6 +144,12 @@ int main(int argc, char **argv)
         Save(noNormals, h.size, std::string(argv[3]) + "-no-normals.ppm");
         scene.settings.normalMaps = true;
         Check(first == render(0), "normal toggle did not restore forest");
+        scene.settings.materialDetail = false;
+        auto noDetail = render(0);
+        Check(first != noDetail, "forest material detail did not affect lighting");
+        Save(noDetail, h.size, std::string(argv[3]) + "-no-detail.ppm");
+        scene.settings.materialDetail = true;
+        Check(first == render(0), "material detail toggle did not restore forest");
         // Check placed root tips against the terrain, including uneven river banks.
         scene.Draw(
             [&](size_t asset, auto instances)

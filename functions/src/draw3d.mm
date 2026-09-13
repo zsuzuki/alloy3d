@@ -60,6 +60,7 @@ struct DrawModel3D
   alloy3d::ModelTextureTransform3D textureTransform;
   uint32_t maxAnisotropy = 1;
   float normalStrength = 1;
+  bool materialDetail = false;
   NSUInteger        instanceOffset = 0;
   NSUInteger        instanceCount  = 0;
 
@@ -77,7 +78,7 @@ struct DrawModel3D
         scale(other.scale), color(other.color), shader(std::move(other.shader)),
         parameters(other.parameters), highlight(other.highlight),
         textureTransform(other.textureTransform), maxAnisotropy(other.maxAnisotropy), normalStrength(other.normalStrength),
-        instanceOffset(other.instanceOffset),
+        materialDetail(other.materialDetail), instanceOffset(other.instanceOffset),
         instanceCount(other.instanceCount)
   {
   }
@@ -202,6 +203,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   alloy3d::ModelTextureTransform3D modelTextureTransform_;
   alloy3d::ModelTextureSampling3D modelTextureSampling_;
   alloy3d::ModelNormalMapping3D modelNormalMapping_;
+  alloy3d::ModelMaterialDetail3D modelMaterialDetail_;
   id<MTLSamplerState> modelSamplers_[17]; // Bounded lazy cache, index 1..16.
 
   SimpleLock primLock_;
@@ -436,6 +438,11 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   if (!std::isfinite(mapping.strength) || mapping.strength < 0 || mapping.strength > 8)
     throw std::invalid_argument("Alloy3D normal strength must be finite in [0,8]");
   modelNormalMapping_ = mapping;
+}
+
+- (void)setModelMaterialDetail:(const alloy3d::ModelMaterialDetail3D &)detail
+{
+  modelMaterialDetail_ = detail;
 }
 
 - (void)setModelHighlight:(const alloy3d::ModelHighlight3D &)highlight
@@ -1164,6 +1171,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
   drawModelList_.back().textureTransform = modelTextureTransform_;
   drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
   drawModelList_.back().normalStrength = modelNormalMapping_.strength;
+  drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
 }
 
 - (void)drawModelInstances:(MetalModel *)model
@@ -1194,6 +1202,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
       drawModelList_.back().textureTransform = modelTextureTransform_;
       drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
       drawModelList_.back().normalStrength = modelNormalMapping_.strength;
+      drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
     }
     return;
   }
@@ -1208,6 +1217,7 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
     drawModelList_.back().textureTransform = modelTextureTransform_;
     drawModelList_.back().maxAnisotropy = modelTextureSampling_.maxAnisotropy;
     drawModelList_.back().normalStrength = modelNormalMapping_.strength;
+    drawModelList_.back().materialDetail = modelMaterialDetail_.enabled;
   }
   catch (...)
   {
@@ -1312,6 +1322,9 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
             simd_make_float4(dmodel.textureTransform.scale, dmodel.textureTransform.offset)};
         material.normalMapping = {part.normalTexture && dmodel.normalStrength > 0 ? 1.f : 0.f,
                                   part.normalScale * dmodel.normalStrength, 0, 0};
+        material.surfaceDetail = {dmodel.materialDetail ? 1.f : 0.f, part.roughness,
+                                  part.occlusionStrength,
+                                  float((part.roughnessTexture ? 1 : 0) | (part.occlusionTexture ? 2 : 0))};
         [renderEncoder setVertexBytes:&material length:sizeof(material) atIndex:BufferIndexMaterial];
         [renderEncoder setFragmentBytes:&material
                                  length:sizeof(material)
@@ -1343,6 +1356,8 @@ alloy3d::CameraData BuildShadowCamera(const alloy3d::DirectionalShadow3D &settin
                                   atIndex:TextureIndexColor];
         [renderEncoder setFragmentTexture:part.normalTexture ? part.normalTexture : whiteTexture_
                                   atIndex:2];
+        [renderEncoder setFragmentTexture:part.roughnessTexture ? part.roughnessTexture : whiteTexture_ atIndex:3];
+        [renderEncoder setFragmentTexture:part.occlusionTexture ? part.occlusionTexture : whiteTexture_ atIndex:4];
         [renderEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                                   indexCount:part.indexCount
                                    indexType:MTLIndexTypeUInt32
