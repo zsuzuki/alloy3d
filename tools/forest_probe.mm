@@ -342,6 +342,122 @@ int main(int argc, char **argv)
                     initialDetail[1],
                     initialDetail[2],
                     initialDetail[3]);
+        // Compare presets at identical time/camera, then restore middle exactly.
+        using Placements = std::array<std::vector<Instance>, forest::Assets.size()>;
+        auto snapshot    = [&]
+        {
+          Placements result;
+          scene.Draw([&](size_t asset, auto instances)
+                     { result[asset].assign(instances.begin(), instances.end()); });
+          return result;
+        };
+        const auto middlePlacements = snapshot();
+        for (auto quality : {forest::Quality::Low, forest::Quality::Middle, forest::Quality::High})
+        {
+          scene.settings.quality = quality;
+          [h.draw setDirectionalShadow:scene.Shadow()];
+          auto preview    = render(2);
+          auto placements = snapshot();
+          auto detail     = detailCounts(); // No missing crowns at any quality.
+          auto profile    = forest::Profile(quality);
+          for (auto asset : {forest::Grass, forest::Fern})
+          {
+            const auto &original = middlePlacements[asset], &current = placements[asset];
+            const float density =
+                asset == forest::Grass ? profile.grassDensity : profile.fernDensity;
+            Check(current.size() == size_t(original.size() * density),
+                  "wrong preset plant density");
+            for (size_t i = 0; i < std::min(original.size(), current.size()); ++i)
+              Check(simd_all(original[i].position == current[i].position) &&
+                        simd_all(original[i].scale == current[i].scale) &&
+                        simd_all(original[i].rotation == current[i].rotation),
+                    "quality switch moved existing vegetation");
+            for (const auto &plant : current)
+            {
+              float x = plant.position.x, z = plant.position.z;
+              Check(std::abs(plant.position.y - forest::Height(x, z)) < .0001f,
+                    "preset vegetation is not grounded");
+              Check(std::abs(x - forest::StreamCenter(z)) >=
+                        forest::StreamWidth(z) +
+                            (asset == forest::Grass ? .28f : .65f * plant.scale.x),
+                    "preset vegetation intrudes into stream");
+            }
+          }
+          const auto &originalDrops = middlePlacements[forest::Droplet];
+          const auto &currentDrops  = placements[forest::Droplet];
+          Check(quality == forest::Quality::Low ? currentDrops.size() < originalDrops.size()
+                                                : currentDrops.size() == originalDrops.size(),
+                "preset did not adjust droplet density");
+          for (const auto &drop : currentDrops)
+            Check(std::any_of(originalDrops.begin(),
+                              originalDrops.end(),
+                              [&](const auto &original)
+                              {
+                                return simd_all(original.position == drop.position) &&
+                                       simd_all(original.scale == drop.scale) &&
+                                       simd_all(original.color == drop.color);
+                              }),
+                  "quality switch changed a droplet trajectory or appearance");
+          for (auto asset : forest::Trunks)
+          {
+            Check(placements[asset].size() == middlePlacements[asset].size(),
+                  "preset removed trees");
+            for (size_t i = 0; i < placements[asset].size(); ++i)
+              Check(simd_all(placements[asset][i].position == middlePlacements[asset][i].position),
+                    "preset moved a tree");
+          }
+          Check(quality == forest::Quality::Middle ? imagesMatch(preview, later)
+                                                   : !imagesMatch(preview, later),
+                "preset did not produce expected image change");
+          Check(quality == forest::Quality::Low    ? detail[1] < initialDetail[1]
+                : quality == forest::Quality::High ? detail[1] > initialDetail[1]
+                                                   : true,
+                "preset did not adjust detailed leaf coverage");
+          checkForestHorizon(preview);
+          Save(preview, h.size, std::string(argv[3]) + "-quality-" + profile.name + ".ppm");
+          std::vector<double> times;
+          for (int frame = 0; frame < 24; ++frame)
+          {
+            render(2);
+            if (frame >= 6)
+              times.push_back(h.gpuMs);
+          }
+          std::sort(times.begin(), times.end());
+          std::printf("quality=%s grass=%zu fern=%zu near=%.1f middle=%.1f billboards=%.1f "
+                      "drops=%zu shadow=%u gpu_median_ms=%.3f\n",
+                      profile.name,
+                      placements[forest::Grass].size(),
+                      placements[forest::Fern].size(),
+                      detail[1],
+                      detail[2],
+                      detail[3],
+                      placements[forest::Droplet].size(),
+                      profile.shadowResolution,
+                      times[times.size() / 2]);
+        }
+        scene.settings.quality = forest::Quality::Middle;
+        [h.draw setDirectionalShadow:scene.Shadow()];
+        Check(imagesMatch(render(2), later), "quality round trip did not restore middle");
+        // Quality changes must also work with frozen water and retain feature toggles.
+        scene.settings.flow         = false;
+        scene.settings.wind         = false;
+        auto        frozen          = render(2);
+        const float frozenWaterTime = scene.waterTime;
+        scene.settings.quality      = forest::Quality::Low;
+        [h.draw setDirectionalShadow:scene.Shadow()];
+        render(2);
+        scene.settings.quality = forest::Quality::High;
+        [h.draw setDirectionalShadow:scene.Shadow()];
+        render(2);
+        scene.settings.quality = forest::Quality::Middle;
+        [h.draw setDirectionalShadow:scene.Shadow()];
+        Check(imagesMatch(render(2), frozen) && scene.waterTime == frozenWaterTime &&
+                  !scene.settings.flow && !scene.settings.wind,
+              "quality switch disturbed paused water or feature toggles");
+        scene.settings.flow = scene.settings.wind = true;
+        Check(imagesMatch(render(2), later), "preset test did not restore animation");
+        std::printf("PASS: quality density, stable layout, grounded plants, leaf detail, horizon, "
+                    "frozen water and quality round trip\n");
         scene.settings.billboards = false;
         Check(!imagesMatch(render(2), later), "billboard toggle has no visible effect");
         Check(detailCounts()[3] == 0, "billboard toggle left sprites active");

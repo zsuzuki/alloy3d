@@ -23,3 +23,7 @@ Run `tools/generate_forest_billboards.py --check` separately to verify billboard
 
 See [the forest sample guide](../../../docs/forest-sample-ja.md) for controls, rendering approximations,
 and the Metal preview probe.
+
+The sample supports manual quality presets: **1 low / 2 middle / 3 high** (default: middle).
+They share these assets; grass/fern density, crown LOD, shadows, light shafts, and droplet density
+are controlled by `Profile()` in `samples/forest/scene.h`. No hardware detection is used.

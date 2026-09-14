@@ -166,12 +166,41 @@ inline float TreeBaseHeight(float x, float z, float scale)
   return y - .12f * scale;
 }
 
+// Manual presets. Middle preserves the original scene; all levels share its layout.
+enum class Quality
+{
+  Low,
+  Middle,
+  High
+};
+struct QualityProfile
+{
+  const char          *name;
+  float                grassDensity, fernDensity;
+  std::array<float, 2> crownThresholds;
+  unsigned             shadowResolution, volumeSteps;
+  size_t               dropletStride;
+};
+inline constexpr QualityProfile Profile(Quality quality)
+{
+  switch (quality)
+  {
+  case Quality::Low:
+    return {"low", .35f, .5f, {.80f, .48f}, 1024, 16, 4};
+  case Quality::High:
+    return {"high", 3.f, 2.f, {.38f, .23f}, 4096, 48, 1};
+  default:
+    return {"middle", 1.f, 1.f, {.54f, .34f}, 2048, 32, 1};
+  }
+}
+
 struct Settings
 {
-  bool wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
-       flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true,
-       transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true,
-       shadowLod = true, softParticles = true, screenWater = true, volumetric = true;
+  Quality quality = Quality::Middle;
+  bool    wind = true, fog = true, shafts = true, shadows = true, paused = false, hud = true,
+          flow = true, billboards = true, droplets = true, normalMaps = true, materialDetail = true,
+          transmission = true, heightFog = true, softShadows = true, toneMapping = true, bloom = true,
+          shadowLod = true, softParticles = true, screenWater = true, volumetric = true;
 };
 
 class Scene
@@ -180,9 +209,10 @@ class Scene
   {
     float z, across, inward, speed, lift, radius, period, phase;
   };
-  std::vector<DropEmitter>                                       drops_;
-  size_t                                                         treeCount_ = 0;
-  uint32_t                                                       seed_      = 0x197307;
+  size_t                   middleGrassCount_ = 0, middleFernCount_ = 0;
+  std::vector<DropEmitter> drops_;
+  size_t                   treeCount_ = 0;
+  uint32_t                 seed_      = 0x197307;
   std::array<std::vector<alloy3d::ModelInstance>, Assets.size()> base_, live_;
   std::vector<alloy3d::ModelInstance>                            lodWood_, lodLeaves_;
   float                                                          Random(float low, float high)
@@ -375,6 +405,33 @@ public:
         emitter.across += Random(-.035f, .035f);
         drops_.push_back(emitter);
       }
+    // Append high-only plants after every original placement/emitter. Prefixes keep
+    // middle unchanged, and low is a stable, spatially scattered subset of middle.
+    middleGrassCount_ = base_[Grass].size();
+    middleFernCount_  = base_[Fern].size();
+    const auto high   = Profile(Quality::High);
+    for (Asset asset : {Grass, Fern})
+    {
+      const size_t target = asset == Grass ? size_t(middleGrassCount_ * high.grassDensity)
+                                           : size_t(middleFernCount_ * high.fernDensity);
+      while (base_[asset].size() < target)
+      {
+        const bool grass = asset == Grass;
+        float      x     = Random(grass ? -30.f : -25.f, grass ? 30.f : 25.f);
+        float      z     = Random(grass ? -58.f : -50.f, grass ? 18.f : 17.f);
+        float      path  = std::abs(x - 1.7f * std::sin(z * .12f));
+        if (path < (grass ? 1.1f : 1.5f) || (grass && path < 2 && Random(0, 1) < .7f))
+          continue;
+        float size = Random(grass ? .55f : .65f, grass ? 1.5f : 1.6f);
+        if (std::abs(x - StreamCenter(z)) < StreamWidth(z) + (grass ? .28f : .65f * size))
+          continue;
+        float       angle = Random(0, 6.283f);
+        simd_float4 color =
+            grass ? simd_float4{Random(.65f, 1.1f), Random(.8f, 1.15f), Random(.65f, 1), 1}
+                  : simd_float4{1, 1, 1, 1};
+        Place(asset, {x, Height(x, z), z}, {size, size, size}, angle, color);
+      }
+    }
     live_ = base_;
     live_[Droplet].reserve(drops_.size());
   }
@@ -390,8 +447,11 @@ public:
       live_[Crowns[variant]]  = base_[Crowns[variant]];
       live_[Foliage[variant]] = base_[Foliage[variant]];
     }
+    const auto profile = Profile(settings.quality);
+    live_[Grass].resize(size_t(middleGrassCount_ * profile.grassDensity));
+    live_[Fern].resize(size_t(middleFernCount_ * profile.fernDensity));
     for (Asset asset : {Crown, Leaves, Crown2, Leaves2, Crown3, Leaves3, Grass, Fern, Mote})
-      for (size_t i = 0; i < base_[asset].size(); ++i)
+      for (size_t i = 0; i < live_[asset].size(); ++i)
       {
         auto &p     = live_[asset][i];
         p           = base_[asset][i];
@@ -420,8 +480,8 @@ public:
       live_[DistantFoliage[variant]].clear();
       for (size_t i = 0; i < wood.size(); ++i)
       {
-        const std::array<float, 2> thresholds = {.54f, .34f};
-        auto                       transition =
+        const auto &thresholds = profile.crownThresholds;
+        auto        transition =
             alloy3d::SelectLod3D(alloy3d::ProjectedHeight3D(
                                      lodCamera,
                                      wood[i].position + simd_make_float3(0, 5 * wood[i].scale.y, 0),
@@ -468,6 +528,9 @@ public:
     live_[Droplet].clear();
     for (size_t i = 0; i < drops_.size(); ++i)
     {
+      // Keep the background and distribute retained layers across the phase cycle.
+      if (i >= BaseEmitters && (i / BaseEmitters) % profile.dropletStride != 0)
+        continue;
       const auto &emitter = drops_[i];
       float       age     = std::fmod(waterTime + emitter.phase, emitter.period);
       if (age < 0)
@@ -534,7 +597,7 @@ public:
   {
     alloy3d::DirectionalShadow3D shadow;
     shadow.enabled      = settings.shadows;
-    shadow.resolution   = 2048;
+    shadow.resolution   = Profile(settings.quality).shadowResolution;
     shadow.bounds       = {{-32, -2, -64}, {32, 24, 24}};
     shadow.depthBias    = .0005f;
     shadow.filterRadius = settings.softShadows ? 1.25f : 0;
@@ -546,7 +609,13 @@ public:
     return {1,
             settings.toneMapping ? alloy3d::ToneMapping3D::ACES : alloy3d::ToneMapping3D::None,
             {settings.bloom ? .08f : 0.f, .8f, 4},
-            {settings.volumetric && settings.shafts ? .25f : 0.f, .028f, 0, .22f, 45, .35f, 32}};
+            {settings.volumetric && settings.shafts ? .25f : 0.f,
+             .028f,
+             0,
+             .22f,
+             45,
+             .35f,
+             Profile(settings.quality).volumeSteps}};
   }
   alloy3d::ModelWind3D Wind(size_t asset) const
   {

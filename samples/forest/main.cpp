@@ -89,6 +89,14 @@ public:
           auto &s = scene_.settings;
           switch (key)
           {
+          case Key::Num1:
+          case Key::Num2:
+          case Key::Num3:
+            s.quality         = key == Key::Num1   ? forest::Quality::Low
+                                : key == Key::Num2 ? forest::Quality::Middle
+                                                   : forest::Quality::High;
+            environmentDirty_ = true;
+            break;
           case Key::N:
             s.normalMaps = !s.normalMaps;
             break;
@@ -236,7 +244,10 @@ public:
       ctx.SetTextColor(.80f, .91f, .80f, 1);
       ctx.Print("AFTER THE RAIN", 28, 30);
       ctx.SetTextColor(.60f, .73f, .64f, 1);
-      ctx.Print("A quiet forest  /  Alloy3D", 29, 62);
+      ctx.Print(std::string("Quality: ") + forest::Profile(scene_.settings.quality).name +
+                    "  /  1 low  2 middle  3 high",
+                29,
+                62);
       ctx.SetTextColor(.78f, .86f, .77f, 1);
       ctx.FillRoundRect({16, height_ / scale - 198},
                         {std::min(width_ / scale - 16, 700.f), height_ / scale - 12},
