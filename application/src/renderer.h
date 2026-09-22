@@ -12,6 +12,7 @@
 - (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)view;
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size;
 - (void)drawInMTKView:(nonnull MTKView *)view;
+- (void)writeFrameProfile;
 
 - (void)setApplicationLoop:(nonnull alloy3d::ApplicationLoop *)appLoop;
 - (void)startApplicationLoop;

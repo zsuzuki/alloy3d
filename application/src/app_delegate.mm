@@ -279,6 +279,7 @@ NSMenu *createMenu();
   NSLog(@"terminate APP");
   view_.paused   = YES;
   view_.delegate = nil;
+  [renderer_ writeFrameProfile];
   [renderer_ release];
   renderer_ = nil;
   [windowDelegate_ release];

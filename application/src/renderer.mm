@@ -3,6 +3,7 @@
 // Copyright 2024 Y.Suzuki(wave.suzuki.z@gmail.com)
 //
 #import "renderer.h"
+#include "frame_profile.h"
 #include <AppKit/AppKit.h>
 #import <Metal/Metal.h>
 #include <alloy3d/application.h>
@@ -591,6 +592,7 @@ public:
   bool                                         applicationStarted_;
   std::unique_ptr<alloy3d::metal::PostProcess> post_;
   NSUInteger                                   postPage_;
+  std::shared_ptr<alloy3d::internal::FrameProfiler> profiler_;
 }
 
 + (id<MTLLibrary>)createShaderLibrary:(id<MTLDevice>)device fromName:(NSString *)libraryName
@@ -627,6 +629,8 @@ public:
     device_          = view.device;
     renderSemaphore_ = dispatch_semaphore_create(MaxBuffersInFlight);
     commandQueue_    = [device_ newCommandQueue];
+    if(const char *path=std::getenv("ALLOY3D_FRAME_PROFILE");path && *path)
+      profiler_=std::make_shared<alloy3d::internal::FrameProfiler>(path);
 
     // Establish the host default once. Resizes subsequently update only aspect.
     auto  size   = view.drawableSize;
@@ -664,6 +668,7 @@ public:
 {
   for (NSUInteger i = 0; i < MaxBuffersInFlight; ++i)
     dispatch_semaphore_wait(renderSemaphore_, DISPATCH_TIME_FOREVER);
+  if(profiler_)profiler_->write();
   // All submitted frames are complete. Balance the shutdown waits before
   // disposal: libdispatch rejects a semaphore below its initial count.
   // Return permits only after acquiring all of them, so none is reused by
@@ -679,9 +684,24 @@ public:
   [super dealloc];
 }
 
+- (void)writeFrameProfile
+{
+  if(profiler_)profiler_->write();
+}
+
 - (void)drawInMTKView:(nonnull MTKView *)view
 {
+  using alloy3d::internal::profileNow;
+  auto profile=profiler_;
+  auto row=profile?std::make_shared<alloy3d::internal::FrameProfile>():nullptr;
+  double mark=profile?profileNow():0;
+  if(row) {
+    row->frame=++profile->frame;row->interval=profile->last?mark-profile->last:0;
+    profile->last=mark;row->width=view.drawableSize.width;row->height=view.drawableSize.height;row->samples=view.sampleCount;
+  }
+  auto measure=[&](double &value){double now=profileNow();value=now-mark;mark=now;};
   dispatch_semaphore_wait(renderSemaphore_, DISPATCH_TIME_FOREVER);
+  if(row)measure(row->wait);
 
   id<MTLCommandBuffer> commandBuffer = [commandQueue_ commandBuffer];
   if (commandBuffer == nil)
@@ -693,6 +713,12 @@ public:
 
   __block dispatch_semaphore_t block_sema = renderSemaphore_;
   [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> buffer) {
+    if(row) {
+      row->gpu=(buffer.GPUEndTime-buffer.GPUStartTime)*1000;
+      row->driver=(buffer.kernelEndTime-buffer.kernelStartTime)*1000;
+      row->completed=buffer.status==MTLCommandBufferStatusCompleted;
+      profile->complete(*row);
+    }
     dispatch_semaphore_signal(block_sema);
   }];
 
@@ -704,11 +730,14 @@ public:
   appctx.post_   = post_.get();
   [draw2d_ beginFrame];
   [draw3d_ beginFrame];
+  if(row)measure(row->setup);
   appLoop_->Update(appctx);
+  if(row)measure(row->update);
 
   // render
   auto renderPassDescriptor = view.currentRenderPassDescriptor;
   auto drawable             = view.currentDrawable;
+  if(row)measure(row->drawable);
 
   if (renderPassDescriptor != nil && drawable != nil)
   {
@@ -769,6 +798,9 @@ public:
 
     [renderEncoder endEncoding];
     [commandBuffer presentDrawable:drawable];
+    if(row) {
+      row->rendered=true;row->colorDraws=[draw3d_ modelDrawCallCount];row->shadowDraws=[draw3d_ shadowDrawCallCount];
+    }
   }
   else
   {
@@ -776,6 +808,7 @@ public:
     [draw3d_ discardFrame];
   }
 
+  if(row)measure(row->encode);
   [commandBuffer commit];
 }
 
