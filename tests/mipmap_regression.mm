@@ -1,4 +1,5 @@
 #include "render_harness.h"
+#include <dispatch/dispatch.h>
 #include <fstream>
 
 static void Submit(Harness &h, MetalModel *model, float scale = 1.31f, float x = 0)
@@ -60,7 +61,26 @@ static void Probe(Harness &h, MetalModel *checker, const std::string &prefix)
 }
 static void Test(Harness &h, const std::filesystem::path &root)
 {
+  // Separate model loads must reuse one completed texture, including when
+  // they request the same image concurrently.
+  std::array<MetalModel *, 3> concurrent{};
+  auto *results = concurrent.data();
+  auto *path = [NSString stringWithUTF8String:(root / "checker.glb").c_str()];
+  auto device = h.device;
+  dispatch_apply(concurrent.size(), dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                 ^(size_t i) {
+                   @autoreleasepool {
+                     results[i] = [[MetalModel alloc] initWithFile:path device:device];
+                   }
+                 });
+  for (auto model : concurrent)
+    Check(model.loaded && model.parts[0].texture == concurrent[0].parts[0].texture,
+          "concurrent model loads duplicated an embedded texture");
   auto checker = h.Load(root / "checker.glb");
+  Check(checker.parts[0].texture == concurrent[0].parts[0].texture,
+        "separate model loads duplicated an embedded texture");
+  for (auto model : concurrent)
+    [model release];
   auto npot    = h.Load(root / "npot.glb");
   auto single  = h.Load(root / "single.glb");
   auto dense   = h.Load(root / "mask_dense.glb");

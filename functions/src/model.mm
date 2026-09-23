@@ -10,18 +10,48 @@
 #import <Foundation/Foundation.h>
 #import <MetalKit/MetalKit.h>
 #include <algorithm>
+#include <array>
 #include <arm_neon.h>
+#include <CommonCrypto/CommonDigest.h>
 #include <cmath>
+#include <condition_variable>
 #include <cstring>
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace
 {
 constexpr int NoIndex = -1;
+
+// Models and their LODs often embed identical images. Keep a bounded cache of
+// decoded Metal textures, with a single in-flight load per image/device/color
+// space. Parts retain textures themselves, so cache eviction cannot invalidate
+// an already loaded model.
+struct TextureLoad {
+  std::condition_variable ready;
+  id<MTLTexture> texture = nil;
+  bool complete = false;
+  ~TextureLoad() { [texture release]; }
+};
+
+struct TextureCache {
+  std::mutex mutex;
+  NSCache<NSData *, id<MTLTexture>> *textures = [[NSCache alloc] init];
+  std::unordered_map<std::string, std::shared_ptr<TextureLoad>> loading;
+  TextureCache() { textures.totalCostLimit = 512ull * 1024 * 1024; }
+};
+
+TextureCache &SharedTextureCache()
+{
+  // The process-wide cache is intentionally not destroyed after AppKit exits.
+  static auto *cache = new TextureCache;
+  return *cache;
+}
 
 struct SourceVertex
 {
@@ -248,6 +278,29 @@ id<MTLTexture> LoadEmbeddedTexture(cgltf_texture *texture, id<MTLDevice> device,
     return nil;
   }
 
+  std::array<uint8_t, CC_SHA256_DIGEST_LENGTH + sizeof(uintptr_t) + 1> keyBytes{};
+  CC_SHA256(bufferData, static_cast<CC_LONG>(view->size), keyBytes.data());
+  uintptr_t deviceAddress = reinterpret_cast<uintptr_t>(device);
+  std::memcpy(keyBytes.data() + CC_SHA256_DIGEST_LENGTH, &deviceAddress, sizeof(deviceAddress));
+  keyBytes.back() = srgb ? 1 : 0;
+  NSData *key = [NSData dataWithBytes:keyBytes.data() length:keyBytes.size()];
+  std::string loadingKey(reinterpret_cast<const char *>(keyBytes.data()), keyBytes.size());
+  auto &cache = SharedTextureCache();
+  std::shared_ptr<TextureLoad> pending;
+  {
+    std::unique_lock lock(cache.mutex);
+    if (id<MTLTexture> existing = [cache.textures objectForKey:key])
+      return [existing retain];
+    if (auto it = cache.loading.find(loadingKey); it != cache.loading.end())
+    {
+      pending = it->second;
+      pending->ready.wait(lock, [&] { return pending->complete; });
+      return [pending->texture retain];
+    }
+    pending = std::make_shared<TextureLoad>();
+    cache.loading.emplace(loadingKey, pending);
+  }
+
   NSData       *data    = [NSData dataWithBytes:bufferData length:view->size];
   auto          loader  = [[MTKTextureLoader alloc] initWithDevice:device];
   NSError      *error   = nil;
@@ -281,6 +334,15 @@ id<MTLTexture> LoadEmbeddedTexture(cgltf_texture *texture, id<MTLDevice> device,
     [queue release];
   }
   [loader release];
+  {
+    std::lock_guard lock(cache.mutex);
+    pending->texture = [tex retain];
+    pending->complete = true;
+    if (tex != nil)
+      [cache.textures setObject:tex forKey:key cost:tex.allocatedSize];
+    cache.loading.erase(loadingKey);
+  }
+  pending->ready.notify_all();
   return tex;
 }
 
