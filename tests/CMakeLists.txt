@@ -1,3 +1,13 @@
+add_executable(alloy3d_streaming_regression streaming_regression.cpp)
+target_link_libraries(alloy3d_streaming_regression PRIVATE Alloy3D::application)
+add_test(NAME streaming_regression COMMAND alloy3d_streaming_regression)
+set_tests_properties(streaming_regression PROPERTIES TIMEOUT 15)
+
+add_executable(alloy3d_culling_probe ../tools/culling_probe.mm)
+target_include_directories(alloy3d_culling_probe PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_culling_probe PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_culling_probe shaders)
+
 add_executable(alloy3d_volumetric_regression volumetric_regression.mm)
 target_include_directories(alloy3d_volumetric_regression PRIVATE ../functions/internal)
 target_link_libraries(alloy3d_volumetric_regression PRIVATE Alloy3D::application)
@@ -275,3 +285,21 @@ add_test(NAME texture_transform_regression COMMAND alloy3d_texture_transform_reg
   ${CMAKE_BINARY_DIR}/shaders/shaders.metallib
   ${CMAKE_SOURCE_DIR}/assets/tests/materials)
 set_tests_properties(texture_transform_regression PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
+
+add_executable(alloy3d_open_world_probe ../tools/open_world_probe.mm)
+target_include_directories(alloy3d_open_world_probe PRIVATE ../functions/internal)
+target_link_libraries(alloy3d_open_world_probe PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_open_world_probe shaders alloy3d_open_world_assets)
+add_test(NAME open_world_streaming COMMAND alloy3d_open_world_probe
+  ${CMAKE_BINARY_DIR}/shaders/shaders.metallib ${OPEN_WORLD_ASSETS} ${CMAKE_BINARY_DIR}/open-world-preview)
+set_tests_properties(open_world_streaming PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77 TIMEOUT 120)
+
+add_test(NAME model_loader_lifetime COMMAND alloy3d_renderer_lifecycle 3
+  ${CMAKE_SOURCE_DIR}/assets/tests/materials/mask_checker.glb)
+set_tests_properties(model_loader_lifetime PROPERTIES ENVIRONMENT "MTL_DEBUG_LAYER=1" SKIP_RETURN_CODE 77)
+
+add_executable(alloy3d_open_world_navigation open_world_navigation.cpp)
+target_link_libraries(alloy3d_open_world_navigation PRIVATE Alloy3D::application)
+add_dependencies(alloy3d_open_world_navigation alloy3d_open_world_assets)
+add_test(NAME open_world_navigation COMMAND alloy3d_open_world_navigation ${OPEN_WORLD_ASSETS})
+set_tests_properties(open_world_navigation PROPERTIES TIMEOUT 20)

@@ -22,6 +22,7 @@ The forest includes AI-generated color textures with [recorded provenance](asset
 - [ビルドと利用方法](docs/build-ja.md)
 - [API概要](docs/api-ja.md)
 - [移行メモ](docs/migration-notes.md)
+- [5km四方のストリーミング検証サンプル](docs/open-world-ja.md)
 - [基礎性能・バッファ管理レビュー](docs/performance-review-ja.md)
 - [アニメーション性能改善とテストモデル](docs/animation-performance-ja.md)
 - [文字キャッシュ予算と描画メモリの解放](docs/render-memory-ja.md)
@@ -72,14 +73,16 @@ Primary CMake targets:
 - `Alloy3D::functions`: implementation library used by `Alloy3D::application`
 - `alloy3d_viewer`: bundled sample app, built when `ALLOY3D_BUILD_VIEWER=ON`
 - `alloy3d_forest`: forest atmosphere sample, built when `ALLOY3D_BUILD_FOREST=ON`
+- `alloy3d_open_world`: 5 km river-valley streaming sample with villages, bridges and a walkable mountain trail, built when `ALLOY3D_BUILD_OPEN_WORLD=ON`
 
 The forest sample combines swaying grass, ferns and foliage, mist, warm shafts of
 sunlight, textured soil, bark and mossy rocks, and a flowing stream. Three procedural
 tree variants use recursive branching, attached foliage, and three levels of crown detail,
 including baked billboards in the distance. Water uses a generated flowing surface texture.
 Launch it with `open build/alloy3d_forest.app`.
-`ALLOY3D_BUILD_FOREST` initially follows `ALLOY3D_BUILD_VIEWER`; disable both
-explicitly when reusing a previously configured build for library-only work.
+`ALLOY3D_BUILD_FOREST` and `ALLOY3D_BUILD_OPEN_WORLD` initially follow
+`ALLOY3D_BUILD_VIEWER`; disable all three explicitly when reusing a previously
+configured build for library-only work.
 
 ## Sample Assets
 

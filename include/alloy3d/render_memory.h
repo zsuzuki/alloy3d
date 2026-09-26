@@ -11,6 +11,11 @@ struct TextCacheBudget
   std::size_t textureBytes = 16 * 1024 * 1024;
 };
 
+struct ModelResourceStats
+{
+  std::size_t bufferBytes = 0, textureBytes = 0, resourceCount = 0;
+};
+
 struct RenderMemoryStats
 {
   // Library-owned capacity across all three frame pages, not process RSS.

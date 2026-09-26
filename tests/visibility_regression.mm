@@ -59,6 +59,10 @@ int main(int argc, char **argv)
             Check(reference == h.Run(camera, submit), "culling changed visible pixels or shadows");
             Check([h.draw shadowDrawCallCount] == shadows, "culling removed shadow casters");
             Check([h.draw modelDrawCallCount] <= calls, "culling increased draw count");
+            [h.draw setShadowCulling:true];
+            Check(reference == h.Run(camera, submit), "light-frustum culling changed pixels");
+            Check([h.draw shadowDrawCallCount] <= shadows, "shadow culling increased draw count");
+            [h.draw setShadowCulling:false];
           }
           [model release];
         }

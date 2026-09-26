@@ -19,6 +19,7 @@
 #import <simd/simd.h>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 
 static const NSUInteger MaxBuffersInFlight = 3;
 
@@ -376,6 +377,11 @@ public:
     [draw3d_ setModelCoverage:interval];
     return true;
   }
+  bool SetShadowCulling3D(bool enabled) override
+  {
+    [draw3d_ setShadowCulling:enabled];
+    return true;
+  }
   bool SetFrustumCulling3D(bool enabled) override
   {
     [draw3d_ setFrustumCulling:enabled];
@@ -506,9 +512,64 @@ public:
 
   ModelPtr LoadModel(std::string fname) override
   {
-    auto fnstr = [NSString stringWithUTF8String:fname.c_str()];
-    auto model = [[MetalModel alloc] initWithFile:fnstr device:device_];
-    return std::make_shared<ModelImpl>(model);
+    @autoreleasepool
+    {
+      auto fnstr = [NSString stringWithUTF8String:fname.c_str()];
+      auto model = [[MetalModel alloc] initWithFile:fnstr device:device_];
+      try
+      {
+        return std::make_shared<ModelImpl>(model);
+      }
+      catch (...)
+      {
+        [model release];
+        throw;
+      }
+    }
+  }
+
+  ModelLoader CreateModelLoader() override
+  {
+    auto device = std::shared_ptr<void>((void *)[device_ retain], [](void *p) { [(id)p release]; });
+    return [device](std::string path) -> ModelPtr
+    {
+      @autoreleasepool
+      {
+        auto model = [[MetalModel alloc] initWithFile:[NSString stringWithUTF8String:path.c_str()]
+                                               device:(id<MTLDevice>)device.get()];
+        try
+        {
+          return std::make_shared<ModelImpl>(model);
+        }
+        catch (...)
+        {
+          [model release];
+          throw;
+        }
+      }
+    };
+  }
+
+  alloy3d::ModelResourceStats GetModelResourceStats(std::span<const ModelPtr> models) const override
+  {
+    alloy3d::ModelResourceStats stats;
+    std::unordered_set<void *>  seen;
+    @autoreleasepool
+    {
+      for (const auto &source : models)
+        if (auto model = std::dynamic_pointer_cast<ModelImpl>(source))
+          for (ModelPart *part in model->GetModel().parts)
+            for (id<MTLResource> resource in [part resources])
+              if (seen.insert((void *)resource).second)
+              {
+                ++stats.resourceCount;
+                if ([(id)resource conformsToProtocol:@protocol(MTLTexture)])
+                  stats.textureBytes += resource.allocatedSize;
+                else
+                  stats.bufferBytes += resource.allocatedSize;
+              }
+    }
+    return stats;
   }
 
   ModelPtr CreateModelInstance(ModelPtr source) override

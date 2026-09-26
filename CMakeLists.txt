@@ -18,6 +18,7 @@ include(CMakePackageConfigHelpers)
 
 option(ALLOY3D_BUILD_VIEWER "Build the bundled Alloy3D sample viewer app" ON)
 option(ALLOY3D_BUILD_FOREST "Build the forest atmosphere sample app" ${ALLOY3D_BUILD_VIEWER})
+option(ALLOY3D_BUILD_OPEN_WORLD "Build the 5 km streaming sample" ${ALLOY3D_BUILD_VIEWER})
 option(ALLOY3D_INSTALL "Enable install rules for Alloy3D library targets and headers" ON)
 option(ALLOY3D_BUILD_TESTS "Build Metal regression tests and render benchmark" OFF)
 
@@ -105,6 +106,31 @@ target_link_libraries(application
     ${METALKIT_FRAMEWORK}
     ${FOUNDATION_FRAMEWORK}
 )
+
+if(ALLOY3D_BUILD_OPEN_WORLD OR ALLOY3D_BUILD_TESTS)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  set(OPEN_WORLD_ASSETS "${CMAKE_BINARY_DIR}/open-world-assets")
+  add_custom_command(OUTPUT "${OPEN_WORLD_ASSETS}/world.txt"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/generate_open_world.py" "${OPEN_WORLD_ASSETS}"
+    DEPENDS tools/generate_open_world.py tools/open_world_assets.py tools/generate_forest_assets.py
+      assets/samples/open_world/material-atlas.png assets/samples/open_world/foliage-atlas.png
+      assets/samples/open_world/meadow.png
+    COMMENT "Generate original 5 km world assets" VERBATIM)
+  add_custom_target(alloy3d_open_world_assets DEPENDS "${OPEN_WORLD_ASSETS}/world.txt")
+endif()
+
+if(ALLOY3D_BUILD_OPEN_WORLD)
+  add_executable(alloy3d_open_world MACOSX_BUNDLE samples/open_world/main.mm)
+  target_link_libraries(alloy3d_open_world PRIVATE Alloy3D::application)
+  set_target_properties(alloy3d_open_world PROPERTIES MACOSX_BUNDLE_GUI_IDENTIFIER org.suzukiz.alloy3d.open-world)
+  add_dependencies(alloy3d_open_world shaders alloy3d_open_world_assets)
+  set_property(TARGET alloy3d_open_world APPEND PROPERTY LINK_DEPENDS
+    "${OPEN_WORLD_ASSETS}/world.txt" "${CMAKE_BINARY_DIR}/shaders/shaders.metallib")
+  add_custom_command(TARGET alloy3d_open_world POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:alloy3d_open_world>/Contents/Resources/shaders"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${OPEN_WORLD_ASSETS}" "$<TARGET_BUNDLE_DIR:alloy3d_open_world>/Contents/Resources/open-world"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_BINARY_DIR}/shaders/shaders.metallib" "$<TARGET_BUNDLE_DIR:alloy3d_open_world>/Contents/Resources/shaders/shaders.metallib")
+endif()
 
 if(ALLOY3D_BUILD_TESTS)
   enable_testing()

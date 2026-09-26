@@ -240,6 +240,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   id<MTLRenderPipelineState>                          pipelineStateModelInstances_[3];
   bool                                                transparentBatching_;
   bool                                                frustumCulling_;
+  bool                                                shadowCulling_;
   simd_float2                                         modelCoverage_;
   alloy3d::ModelWind3D                                modelWind_;
   alloy3d::ModelVisibility3D                          modelVisibility_;
@@ -266,6 +267,8 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   std::list<DrawText3DPtr>                            drawTextList_;
   std::vector<DrawModel3D>                            drawModelList_;
   std::vector<alloy3d::ModelInstance>                 modelInstances_;
+  std::vector<simd_float4x4>                          instanceTransforms_;
+  std::vector<size_t>                                 visibleInstances_;
   alloy3d::metal::VertexBuffer<ModelInstanceUniforms> instanceBuffers_[3];
   NSUInteger                                          modelDrawCalls_;
 
@@ -1238,6 +1241,11 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   modelCoverage_ = interval;
 }
 
+- (void)setShadowCulling:(bool)enabled
+{
+  shadowCulling_ = enabled;
+}
+
 - (void)setFrustumCulling:(bool)enabled
 {
   frustumCulling_ = enabled;
@@ -1281,12 +1289,16 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   if (instancesPrepared_)
     return;
   auto instances = instanceBuffers_[pageIndex_].append(device_, 0, modelInstances_.size());
+  if (frustumCulling_ || shadowCulling_)
+    instanceTransforms_.resize(modelInstances_.size());
   for (NSUInteger i = 0; i < modelInstances_.size(); ++i)
   {
     const auto &source = modelInstances_[i];
     auto       &target = instances[i];
-    target.modelView =
-        simd_mul(view, BuildModelMatrix(source.position, source.rotation, source.scale));
+    const auto  transform = BuildModelMatrix(source.position, source.rotation, source.scale);
+    if (frustumCulling_ || shadowCulling_)
+      instanceTransforms_[i] = transform;
+    target.modelView       = simd_mul(view, transform);
     target.normalTransform = alloy3d::metal::NormalMatrix(target.modelView);
     target.color           = source.color;
     target.coverage        = source.coverage;
@@ -1325,6 +1337,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
   auto lightCamera = alloy3d::BuildDirectionalShadowCamera3D(shadowSettings_, lightDirection_);
   lightViewProjection_ =
       simd_mul(lightCamera.getProjectionMatrix(), lightCamera.getModelViewMatrix());
+  const alloy3d::Frustum3D shadowFrustum(lightCamera);
   const auto view = camera->getModelViewMatrix();
   [self prepareInstances:view];
   auto pass                        = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -1373,6 +1386,39 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
     {
       if (part.alphaMode == 2)
         continue;
+      NSUInteger count  = instanced ? draw.instanceCount : 1;
+      NSUInteger offset = draw.instanceOffset;
+      if (shadowCulling_)
+      {
+        const auto bounds = WindBounds(part.renderBounds, draw.wind);
+        if (instanced)
+        {
+          visibleInstances_.clear();
+          for (size_t i = 0; i < draw.instanceCount; ++i)
+            if (shadowFrustum.intersects(bounds, instanceTransforms_[draw.instanceOffset + i]))
+              visibleInstances_.push_back(draw.instanceOffset + i);
+          count = visibleInstances_.size();
+          if (!count)
+            continue;
+          if (count != draw.instanceCount)
+          {
+            offset               = instanceUsed_;
+            auto        target   = instanceBuffers_[pageIndex_].append(device_, offset, count);
+            const auto *original = static_cast<const ModelInstanceUniforms *>(
+                instanceBuffers_[pageIndex_].buffer().contents);
+            for (size_t i = 0; i < count; ++i)
+              target[i] = original[visibleInstances_[i]];
+            instanceUsed_ += count;
+          }
+        }
+        else if (!shadowFrustum.intersects(
+                     bounds, BuildModelMatrix(draw.position, draw.rotation, draw.scale)))
+          continue;
+      }
+      if (instanced && shadowCulling_)
+        [encoder setVertexBuffer:instanceBuffers_[pageIndex_].buffer()
+                          offset:offset * sizeof(ModelInstanceUniforms)
+                         atIndex:BufferIndexInstances];
       [encoder setFragmentSamplerState:[self modelSampler:draw.maxAnisotropy] atIndex:0];
       MaterialUniforms material{
           {float(part.alphaMode), part.alphaCutoff, float(part.doubleSided), float(part.unlit)},
@@ -1393,7 +1439,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
                            indexType:MTLIndexTypeUInt32
                          indexBuffer:part.indexBuffer
                    indexBufferOffset:0
-                       instanceCount:instanced ? draw.instanceCount : 1];
+                       instanceCount:count];
       ++shadowDrawCalls_;
     }
   }
@@ -1699,7 +1745,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
       };
       size_t                   usedInstances = instanceUsed_;
       const alloy3d::Frustum3D frustum(*camera);
-      std::vector<size_t>      visible;
+      auto                    &visible = visibleInstances_;
       transparentParts_.clear();
       for (const auto &dmodel : drawModelList_)
       {
@@ -1719,9 +1765,7 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
               visible.clear();
               for (size_t i = 0; i < dmodel.instanceCount; ++i)
               {
-                const auto &source = modelInstances_[dmodel.instanceOffset + i];
-                if (frustum.intersects(
-                        bounds, BuildModelMatrix(source.position, source.rotation, source.scale)))
+                if (frustum.intersects(bounds, instanceTransforms_[dmodel.instanceOffset + i]))
                   visible.push_back(dmodel.instanceOffset + i);
               }
               if (visible.empty())
@@ -1914,6 +1958,11 @@ simd_float4x4 BuildModelMatrix(simd_float3 position, simd_float3 rotation, simd_
 {
   if (transparentParts_.empty())
     std::vector<TransparentPart>{}.swap(transparentParts_);
+  if (modelInstances_.empty())
+  {
+    std::vector<simd_float4x4>{}.swap(instanceTransforms_);
+    std::vector<size_t>{}.swap(visibleInstances_);
+  }
   [fontRender_ clearRenderCache];
   [textTextureCache_ removeAllObjects];
   for (auto &pending : releasePending_)

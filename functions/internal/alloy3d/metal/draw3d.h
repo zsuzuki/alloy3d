@@ -48,6 +48,7 @@ enum class ScenePhase
 - (void)setModelWind:(const alloy3d::ModelWind3D &)wind;
 - (void)setModelCoverage:(simd_float2)interval;
 - (void)setFrustumCulling:(bool)enabled;
+- (void)setShadowCulling:(bool)enabled;
 - (void)setTransparentBatching:(bool)enabled;
 - (void)setHeightFog:(const alloy3d::HeightFog3D &)fog;
 - (void)setModelTransmission:(const alloy3d::ModelTransmission3D &)transmission;

@@ -757,6 +757,24 @@ std::vector<AnimationClipData> BuildAnimations(const cgltf_data *data)
   sortCenterDirty_ = true;
 }
 
+// Diagnostics only. Does not allocate/upload joint data or wait for the GPU.
+- (NSArray<id<MTLResource>> *)resources
+{
+  auto resources = [NSMutableArray array];
+  for (id<MTLResource> resource : {(id<MTLResource>)vertexBuffer_,
+                                   (id<MTLResource>)indexBuffer_,
+                                   (id<MTLResource>)texture_,
+                                   (id<MTLResource>)normalTexture_,
+                                   (id<MTLResource>)roughnessTexture_,
+                                   (id<MTLResource>)occlusionTexture_})
+    if (resource)
+      [resources addObject:resource];
+  for (auto buffer : jointMatrixBuffers_)
+    if (buffer)
+      [resources addObject:buffer];
+  return resources;
+}
+
 - (simd_float3)sortCenter
 {
   if (sortCenterDirty_)

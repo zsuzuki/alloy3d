@@ -32,6 +32,7 @@
                                      texture:(nullable id<MTLTexture>)texture
                                   indexCount:(NSUInteger)indexCount
                                    baseColor:(simd_float4)baseColor;
+- (nonnull NSArray<id<MTLResource>> *)resources;
 - (nullable id<MTLBuffer>)vertexBufferForPage:(NSUInteger)pageIndex;
 - (nullable id<MTLBuffer>)jointMatrixBufferForPage:(NSUInteger)pageIndex;
 

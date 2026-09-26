@@ -15,6 +15,7 @@
 #include <alloy3d/render_memory.h>
 #include <alloy3d/sprite.h>
 #include <memory>
+#include <functional>
 #include <simd/vector_types.h>
 #include <span>
 #include <string>
@@ -115,6 +116,8 @@ public:
   virtual bool SetModelCoverage3D(simd_float2 interval) { return false; }
   // Frame-level conservative color-pass culling. Shadow casters remain submitted.
   virtual bool SetFrustumCulling3D(bool enabled) { return false; }
+  // Optional light-frustum culling; preserves off-camera casters. Default disabled.
+  virtual bool SetShadowCulling3D(bool enabled) { return false; }
   // Frame-level batching after sorting. Both optimizations default to disabled.
   virtual bool SetTransparentBatching3D(bool enabled) { return false; }
 
@@ -171,6 +174,17 @@ public:
                           TextAlign3D align = TextAlign3D::LeftBottom)                    = 0;
   using ModelPtr                                = std::shared_ptr<Model>;
   virtual ModelPtr LoadModel(std::string fname) = 0;
+  // Retains only loading dependencies; callable from worker threads after this callback
+  // context has expired. Each returned model must be published before owner-thread use.
+  // Empty on unsupported contexts. Does not make drawing/model mutation thread safe.
+  using ModelLoader = std::function<ModelPtr(std::string)>;
+  virtual ModelLoader CreateModelLoader() { return {}; }
+  // Unique resources referenced by this set of models. Excludes texture cache-only entries,
+  // in-flight retired resources, CPU model data and renderer targets. No GPU synchronization.
+  virtual ModelResourceStats GetModelResourceStats(std::span<const ModelPtr> models) const
+  {
+    return {};
+  }
   // Share immutable resources, copy the current pose, then animate independently.
   // The bundled host implements this; unsupported custom contexts return null.
   virtual ModelPtr CreateModelInstance(ModelPtr source) { return {}; }

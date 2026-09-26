@@ -190,7 +190,6 @@ NSMenu *createMenu();
 - (void)quitCallback:(NSObject *)sender
 {
   //   NSLog(@"Quit Push");
-  appLoop_->WillCloseWindow();
   auto app = [NSApplication sharedApplication];
   [app terminate:sender];
 }
@@ -279,6 +278,8 @@ NSMenu *createMenu();
   NSLog(@"terminate APP");
   view_.paused   = YES;
   view_.delegate = nil;
+  // Stop streaming workers before renderer teardown, for window-close and Quit alike.
+  appLoop_->WillCloseWindow();
   [renderer_ writeFrameProfile];
   [renderer_ release];
   renderer_ = nil;

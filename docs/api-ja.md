@@ -188,3 +188,12 @@ GLBの透明モード・両面・Unlitは自動反映します。[基本マテ�
 
 `Draw2D`、`Draw3D`、`Texture` などのObjective-C++ヘッダは `functions/internal`
 配下の内部実装です。外部利用者向けの安定APIではありません。
+
+## 広域シーン向けの追加API
+
+- `CreateModelLoader()`：コールバックの寿命から独立したバックグラウンドロード用関数。
+- `GetModelResourceStats(models)`：共有分を重複排除したモデル集合のMetal資源量。
+- `SetShadowCulling3D(true)`：ライト視錐台で影の対象を絞る任意の機能。初期値OFF。
+- `StreamingCache<T>`：要求数とフレームごとの反映件数を制限する任意の非同期キャッシュ。
+
+寿命・計測対象・サンプルの説明は[5km四方のサンプル](open-world-ja.md)を参照してください。
